@@ -19,7 +19,7 @@ pipeline {
         stage('Test') {
             steps {
                 echo 'Running simple tests (add your PHP tests here, e.g., PHPUnit if available)'
-                sh 'docker-compose -f docker-compose.yaml up -d --build'  /
+                sh 'docker-compose -f docker-compose.yaml up -d --build' 
                 sh 'sleep 10'  
                 sh 'docker-compose -f docker-compose.yaml exec -T backend php -v'  
                 sh 'docker-compose -f docker-compose.yaml down'
