@@ -1,31 +1,30 @@
 pipeline {
-<<<<<<< HEAD
-  agent { label 'docker-agent' }  
+  agent { label 'docker-agent' }  // Использует динамический агент из Swarm-cloud
   environment {
-    APP_NAME = 'crudapp'  
-    DOCKER_HUB_USER = ‘popstar13’  
-    GIT_REPO = 'https://github.com/limlinli/crudapp.git'  
-    DB_USER = 'root'
-    DB_PASS = 'secret'  
+    APP_NAME = 'crudapp'  // Имя стека в Swarm
+    DOCKER_HUB_USER = 'limlinli'  // Ваш логин в Docker Hub (из repo)
+    GIT_REPO = 'https://github.com/limlinli/crudapp.git'  // Ваш repo
+    DB_USER = 'root'  // MySQL user (из вашего dump)
+    DB_PASS = 'secret'  // MySQL pass (лучше хранить в Jenkins credentials)
   }
   stages {
     stage('Checkout') {
       steps {
-        git url: "${GIT_REPO}", branch: 'main'  
+        git url: "${GIT_REPO}", branch: 'main'  // Клонирует код из main ветки
       }
     }
     stage('Build Docker Images') {
       steps {
-        sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:latest'  
-        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/crudmysql:latest' 
+        sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:latest'  // Backend (PHP+Apache)
+        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/crudmysql:latest'  // DB (MySQL)
       }
     }
     stage('Test') {
       steps {
-        sh 'docker-compose up -d' 
-        sh 'sleep 10' 
-        sh 'docker exec app_web curl http://localhost/cart.php'  
-        sh 'docker-compose down'  
+        sh 'docker-compose up -d'  // Запускает локально для тестов
+        sh 'sleep 10'  // Ждет запуска контейнеров
+        sh 'docker exec app_web curl http://localhost/index.php'  // Тест: проверка главной страницы (замените на ваш URL, напр. cart.php если нужно)
+        sh 'docker-compose down'  // Очищает после теста
       }
     }
     stage('Push to Docker Hub') {
@@ -34,78 +33,23 @@ pipeline {
           sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
           sh 'docker push ${DOCKER_HUB_USER}/crudback:latest'
           sh 'docker push ${DOCKER_HUB_USER}/crudmysql:latest'
-=======
-    agent { label 'docker' }
-    environment {
-        APP_VERSION = '1.0'
-        DOCKERHUB_USER = 'popstar13'
+        }
+      }
     }
-    stages {
-        stage('Build') {
-            steps {
-                sh 'printenv'
-                echo 'Building PHP app and Docker images'
-                sh "docker build -f php.Dockerfile -t ${DOCKERHUB_USER}/crudback:${GIT_COMMIT} ."
-                sh "docker build -f mysql.Dockerfile -t ${DOCKERHUB_USER}/mysql:${GIT_COMMIT} ."
-            }
-        }
-        stage('Test') {
-            steps {
-                echo 'Running simple tests'
-                script {
-                    sh 'docker run --rm ${DOCKERHUB_USER}/crudback:${GIT_COMMIT} php -v'
-                }
-                sh 'sleep 10'
-            }
-        }
-        stage('Push') {
-            when { branch 'master' }
-            steps {
-                echo 'Pushing to Docker Hub'
-                withCredentials([usernamePassword(credentialsId: 'dockerhub', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
-                    sh 'docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD'
-                    sh "docker tag ${DOCKERHUB_USER}/crudback:${GIT_COMMIT} ${DOCKERHUB_USER}/crudback:${APP_VERSION}"
-                    sh "docker tag ${DOCKERHUB_USER}/crudback:${GIT_COMMIT} ${DOCKERHUB_USER}/crudback:latest"
-                    sh "docker push ${DOCKERHUB_USER}/crudback:${APP_VERSION}"
-                    sh "docker push ${DOCKERHUB_USER}/crudback:latest"
-                    sh "docker tag ${DOCKERHUB_USER}/mysql:${GIT_COMMIT} ${DOCKERHUB_USER}/mysql:${APP_VERSION}"
-                    sh "docker tag ${DOCKERHUB_USER}/mysql:${GIT_COMMIT} ${DOCKERHUB_USER}/mysql:latest"
-                    sh "docker push ${DOCKERHUB_USER}/mysql:${APP_VERSION}"
-                    sh "docker push ${DOCKERHUB_USER}/mysql:latest"
-                }
-            }
-        }
-        stage('Deploy to Swarm') {
-            when { branch 'master' }
-            steps {
-                echo 'Updating Swarm stack'
-                sh 'docker stack deploy -c docker-compose.yaml crudapp --with-registry-auth'
-            }
->>>>>>> b164bac37553a83fec9576f3b33b9f723b79f5f0
-        }
-    }
-<<<<<<< HEAD
     stage('Deploy to Swarm with Canary') {
       steps {
-        sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'  
-        sh 'docker service update --replicas 1 --update-delay 10s ${APP_NAME}_web'  
-        sh 'docker service update --replicas 1 --update-delay 10s ${APP_NAME}_db'
-        
-        sh 'sleep 30'
-        sh 'docker service ls'
+        sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'  // Развертывание стека
+        // Canary: постепенное обновление, по 1 реплике с задержкой
+        sh 'docker service update --image ${DOCKER_HUB_USER}/crudback:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_web'
+        sh 'docker service update --image ${DOCKER_HUB_USER}/crudmysql:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_db'
+        sh 'sleep 30'  // Ждет для мониторинга
+        sh 'docker service ls'  // Проверяет статус
       }
     }
   }
   post {
     always {
-      sh 'docker logout'  
+      sh 'docker logout'  // Выход из Docker Hub
     }
   }
-=======
-    post {
-        always {
-            sh 'docker system prune -f'
-        }
-    }
->>>>>>> b164bac37553a83fec9576f3b33b9f723b79f5f0
 }
