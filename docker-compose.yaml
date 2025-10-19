@@ -1,7 +1,7 @@
 version: "3.7"
 services:
   web-server:
-    image: mhjkeee/crudback
+    image: popstar13/crudback
     restart: always
     ports:
       - "8080:80"
@@ -9,7 +9,7 @@ services:
       - db
       - phpmyadmin
   db:
-    image: mhjkeee/mysql
+    image: popstar13/mysql
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'secret'
