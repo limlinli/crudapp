@@ -6,7 +6,7 @@ pipeline {
     DOCKER_HUB_USER = ‘popstar13’  
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'  
     DB_USER = 'root'
-    DB_PASS = 'secret'  /
+    DB_PASS = 'secret'  
   }
   stages {
     stage('Checkout') {
