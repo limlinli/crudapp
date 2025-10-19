@@ -1,30 +1,31 @@
 pipeline {
-  agent { label 'docker-agent' }  // Использует динамический агент из Swarm-cloud
+  agent { label 'docker-agent' }
   environment {
-    APP_NAME = 'crudapp'  // Имя стека в Swarm
-    DOCKER_HUB_USER = 'limlinli'  // Ваш логин в Docker Hub (из repo)
-    GIT_REPO = 'https://github.com/limlinli/crudapp.git'  // Ваш repo
-    DB_USER = 'root'  // MySQL user (из вашего dump)
-    DB_PASS = 'secret'  // MySQL pass (лучше хранить в Jenkins credentials)
+    APP_NAME = 'crudapp'
+    DOCKER_HUB_USER = 'limlinli'
+    GIT_REPO = 'https://github.com/limlinli/crudapp.git'
+    DB_USER = 'root'
+    DB_PASS = 'secret'
   }
   stages {
     stage('Checkout') {
       steps {
-        git url: "${GIT_REPO}", branch: 'main'  // Клонирует код из main ветки
+        git url: "${GIT_REPO}", branch: 'main'
       }
     }
     stage('Build Docker Images') {
       steps {
-        sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:latest'  // Backend (PHP+Apache)
-        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/crudmysql:latest'  // DB (MySQL)
+        sh 'apt-get update && apt-get install -y docker.io'
+        sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:latest'
+        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/crudmysql:latest'
       }
     }
     stage('Test') {
       steps {
-        sh 'docker-compose up -d'  // Запускает локально для тестов
-        sh 'sleep 10'  // Ждет запуска контейнеров
-        sh 'docker exec app_web curl http://localhost/index.php'  // Тест: проверка главной страницы (замените на ваш URL, напр. cart.php если нужно)
-        sh 'docker-compose down'  // Очищает после теста
+        sh 'docker-compose up -d'
+        sh 'sleep 10'
+        sh 'docker exec app_web curl http://localhost/index.php'
+        sh 'docker-compose down'
       }
     }
     stage('Push to Docker Hub') {
@@ -38,18 +39,17 @@ pipeline {
     }
     stage('Deploy to Swarm with Canary') {
       steps {
-        sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'  // Развертывание стека
-        // Canary: постепенное обновление, по 1 реплике с задержкой
+        sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'
         sh 'docker service update --image ${DOCKER_HUB_USER}/crudback:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_web'
         sh 'docker service update --image ${DOCKER_HUB_USER}/crudmysql:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_db'
-        sh 'sleep 30'  // Ждет для мониторинга
-        sh 'docker service ls'  // Проверяет статус
+        sh 'sleep 30'
+        sh 'docker service ls'
       }
     }
   }
   post {
     always {
-      sh 'docker logout'  // Выход из Docker Hub
+      sh 'docker logout'
     }
   }
 }
