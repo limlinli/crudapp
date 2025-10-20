@@ -2,7 +2,7 @@ pipeline {
        agent { label 'docker-agent' }
        environment {
          APP_NAME = 'crudapp'
-         DOCKER_HUB_USER = 'limlinli'
+         DOCKER_HUB_USER = 'popstar13'
          GIT_REPO = 'https://github.com/limlinli/crudapp.git'
          DB_USER = 'root'
          DB_PASS = 'secret'
