@@ -17,7 +17,7 @@ pipeline {
       steps {
         sh 'apt-get update && apt-get install -y docker.io'
         sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:latest'
-        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/crudmysql:latest'
+        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/mysql:latest'
       }
     }
     stage('Test') {
@@ -33,7 +33,7 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
           sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
           sh 'docker push ${DOCKER_HUB_USER}/crudback:latest'
-          sh 'docker push ${DOCKER_HUB_USER}/crudmysql:latest'
+          sh 'docker push ${DOCKER_HUB_USER}/mysql:latest'
         }
       }
     }
@@ -41,7 +41,7 @@ pipeline {
       steps {
         sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'
         sh 'docker service update --image ${DOCKER_HUB_USER}/crudback:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_web'
-        sh 'docker service update --image ${DOCKER_HUB_USER}/crudmysql:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_db'
+        sh 'docker service update --image ${DOCKER_HUB_USER}/mysql:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_db'
         sh 'sleep 30'
         sh 'docker service ls'
       }
