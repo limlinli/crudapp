@@ -15,7 +15,6 @@ pipeline {
          }
          stage('Build Docker Images') {
            steps {
-             sh 'sudo apt-get update && sudo apt-get install -y docker.io'
              sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:latest'
              sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/crudmysql:latest'
            }
