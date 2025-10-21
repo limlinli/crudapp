@@ -20,6 +20,14 @@ pipeline {
         sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/mysql:latest'
       }
     }
+    stage('Test') {
+      steps {
+        sh 'docker-compose up -d'
+        sh 'sleep 15'  // Увеличил задержку для надежности
+        sh 'docker exec app_web-server curl http://localhost:8080'  // Проверка веб-сервера
+        sh 'docker-compose down'
+      }
+    }
     stage('Push to Docker Hub') {
       steps {
         withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
