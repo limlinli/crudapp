@@ -50,7 +50,7 @@ pipeline {
 
         sh 'docker run -d -p 8081:80 --name test_web --link test_db:db ${DOCKER_HUB_USER}/crudback:latest'
 
-        sh 'sleep 15'
+        sh 'sleep 30'
 
         sh 'docker exec test_web curl http://localhost:80'
 
