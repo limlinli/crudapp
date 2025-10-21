@@ -22,10 +22,10 @@ pipeline {
     }
     stage('Test') {
       steps {
-        sh 'docker-compose up -d'
-        sh 'sleep 15'  // Увеличил задержку для надежности
-        sh 'docker exec app_web-server curl http://localhost:8080'  // Проверка веб-сервера
-        sh 'docker-compose down'
+        sh 'docker run -d -p 8081:80 --name test_web ${DOCKER_HUB_USER}/crudback:latest'  // Уникальный порт 8081
+        sh 'sleep 10'
+        sh 'docker exec test_web curl http://localhost:80'  // Проверка внутри контейнера
+        sh 'docker stop test_web && docker rm test_web'
       }
     }
     stage('Push to Docker Hub') {
