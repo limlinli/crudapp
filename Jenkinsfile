@@ -52,7 +52,7 @@ pipeline {
 
         sh 'sleep 90'
 
-        sh 'docker exec test_web curl http://localhost:80'
+        sh 'docker exec test_web curl -s -o /dev/null http://localhost:80'
 
         sh 'docker stop test_db test_web && docker rm test_db test_web'
 
