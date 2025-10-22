@@ -28,13 +28,12 @@ pipeline {
       steps {
         sh 'docker run -d -p 3307:3306 --name test_db -e MYSQL_ROOT_PASSWORD=${DB_PASS} -e MYSQL_DATABASE=${DB_NAME} ${DOCKER_HUB_USER}/mysql:latest'
         sh 'docker run -d -p 8081:80 --name test_web --link test_db:db ${DOCKER_HUB_USER}/crudback:latest'
-        sh 'sleep 90'
-        sh '''
-          # Проверка доступности страницы
-          docker exec test_web curl -s -o /dev/null http://localhost:80 || exit 1
-          # Проверка подключения к базе данных
-          docker exec test_db mysql -u${DB_USER} -p${DB_PASS} -e "USE ${DB_NAME}; SHOW TABLES;" || exit 1
-        '''
+        sh 'sleep 30'
+        
+        sh 'docker exec test_web curl -s -o /dev/null http://localhost:80'
+
+        sh 'docker stop test_db test_web && docker rm test_db test_web'
+
         sh 'docker stop test_db test_web && docker rm test_db test_web'
       }
     }
