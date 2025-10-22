@@ -46,6 +46,8 @@ pipeline {
 
       steps {
 
+        sh ' docker stop test_db || true'
+        sh 'docker rm test_db || true'
         sh 'docker run -d -p 3307:3306 --name test_db -e MYSQL_ROOT_PASSWORD=${DB_PASS} -e MYSQL_DATABASE=${DB_NAME} ${DOCKER_HUB_USER}/mysql:latest'
 
         sh 'docker run -d -p 8081:80 --name test_web --link test_db:db ${DOCKER_HUB_USER}/crudback:latest'
