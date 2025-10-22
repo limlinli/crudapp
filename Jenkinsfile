@@ -12,7 +12,7 @@ pipeline {
 
     DB_USER = 'root'
 
-    DB_PASS = 'secret'
+    DB_PASS = 'п'
 
     DB_NAME = 'lena'
 
