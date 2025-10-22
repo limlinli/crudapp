@@ -28,8 +28,8 @@ pipeline {
         sh 'docker exec test-app-phpmyadmin-1 curl -s -o /dev/null http://localhost:80 || exit 1'  // Проверка phpMyAdmin
         // Проверка подключения к базе данных
         sh '''
-          docker exec test-app-web-server-1 php -r "try { \$pdo = new PDO(\\'mysql:host=test-app-db-1;dbname=lena\\', \\'root\\', \\'${DB_PASS}\\' ); echo \\'Connection successful\\'; } catch (PDOException \$e) { echo \\'Connection failed: \\' . \$e->getMessage(); exit(1); }" || exit 1
-        '''
+  docker exec test-app-web-server-1 php -r "try { \$pdo = new PDO(\\'mysql:host=test-app-db-1;dbname=lena\\', \\'root\\', \\'${DB_PASS}\\' ); echo \\'Connection successful\\'; } catch (PDOException \$e) { echo \\'Connection failed: \\' . \$e->getMessage(); exit(1); }" || exit 1
+'''
         sh 'docker-compose -f docker-compose-test.yaml -p test-app down'
       }
     }
