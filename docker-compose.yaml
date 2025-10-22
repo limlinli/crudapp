@@ -12,7 +12,7 @@ services:
     image: popstar13/mysql
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: 'secret'
+      MYSQL_ROOT_PASSWORD: 'f'
       MYSQL_DATABASE: 'lena'
     ports:
       - "3306:3306"
