@@ -25,7 +25,7 @@ pipeline {
         sh 'docker-compose -f docker-compose-test.yaml down || true'
         sh 'docker-compose -f docker-compose-test.yaml up -d'
         sh 'sleep 30'
-        sh 'docker exec crud-ci-cd-web-server-1 curl -s -o /dev/null -w "%{http_code}" http://localhost:80 | grep -q 200'  # Проверка только статуса
+        sh 'docker exec crud-ci-cd-web-server-1 curl -s -o /dev/null -w "%{http_code}" http://localhost:80 | grep -q 200'  
         sh 'docker-compose -f docker-compose-test.yaml down'
       }
     }
