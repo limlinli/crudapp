@@ -22,6 +22,7 @@ pipeline {
     }
     stage('Test') {
       steps {
+        sh 'docker-compose -f docker-compose-test.yaml down || true'
         sh 'docker-compose -f docker-compose-test.yaml up -d'
         sh 'sleep 15'
         sh 'docker exec crud-ci-cd-web-server-1 curl http://localhost:8080'
