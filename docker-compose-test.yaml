@@ -12,7 +12,7 @@ services:
     image: popstar13/mysql
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: 'secret'
+      MYSQL_ROOT_PASSWORD: 'gg'
       MYSQL_DATABASE: 'lena'
     ports:
       - "3307:3306"  # Изменили порт, чтобы не конфликтовать с 3306
