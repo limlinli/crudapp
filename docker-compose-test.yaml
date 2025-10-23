@@ -1,5 +1,13 @@
-version: '3.8'
+version: "3.7"
 services:
+  web-server:
+    image: popstar13/crudback
+    restart: always
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+      - phpmyadmin
   db:
     image: popstar13/mysql
     restart: always
@@ -7,21 +15,15 @@ services:
       MYSQL_ROOT_PASSWORD: 'secret'
       MYSQL_DATABASE: 'lena'
     ports:
-      - "3307:3306"  # Уникальный порт для теста
-    volumes:
-      - mysql-data:/var/lib/mysql
-  web-server:
-    image: popstar13/crudback
-    ports:
-      - "8081:80"
-    depends_on:
-      - db
+      - "3307:3306"  # Изменили порт, чтобы не конфликтовать с 3306
   phpmyadmin:
     image: phpmyadmin:5.2.1
-    ports:
-      - "5001:80"
+    restart: always
     environment:
-      PMA_HOST: db
-      PMA_PORT: 3306
+      PMA_HOST: 'db'
+      PMA_USER: 'root'
+      PMA_PASSWORD: 'secret'
+    ports:
+      - "5001:80"  # Изменили порт на 5001
 volumes:
   mysql-data:
