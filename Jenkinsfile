@@ -4,6 +4,10 @@ pipeline {
     APP_NAME = 'app'
     DOCKER_HUB_USER = 'popstar13'
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
+    DB_USER = 'root'
+    DB_PASS = 'secret'  // Ожидаемый пароль, совпадающий с docker-compose.yaml
+    DB_NAME = 'lena'
+    DB_HOST = 'app_db'  // Имя сервиса из docker-compose.yaml
   }
   stages {
     stage('Checkout') {
@@ -19,12 +23,12 @@ pipeline {
     }
     stage('Test') {
       steps {
-        sh 'docker-compose -f docker-compose-test.yaml down -v || true'  // -v удаляет volume для свежей БД
-        sh 'docker-compose -f docker-compose-test.yaml up -d'
+        sh 'docker-compose -f docker-compose.yaml down -v || true'  // -v для чистой БД
+        sh 'docker-compose -f docker-compose.yaml up -d'
         sh 'sleep 40'  // Увеличено для инициализации MySQL и dump
-        sh 'docker exec crud-ci-cd-web-server-1 curl -s http://localhost:80 | grep -q "Список товаров"'
-        sh 'docker exec crud-ci-cd-web-server-1 curl -s http://localhost:80 | grep -q "asd"'  // Проверка данных из БД
-        sh 'docker-compose -f docker-compose-test.yaml down -v || true'
+        sh 'docker exec app_web-server curl -s http://localhost:80 | grep -q "Список товаров"'
+        sh 'docker exec app_web-server curl -s http://localhost:80 | grep -q "asd"'  // Проверка данных из БД
+        sh 'docker-compose -f docker-compose.yaml down -v || true'
       }
     }
     stage('Push to Docker Hub') {
