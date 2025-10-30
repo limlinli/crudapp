@@ -4,9 +4,6 @@ pipeline {
     APP_NAME = 'app'
     DOCKER_HUB_USER = 'popstar13'
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
-    DB_USER = 'root'
-    DB_PASS = 'secret'
-    DB_NAME = 'lena'
   }
   stages {
     stage('Checkout') {
@@ -22,10 +19,18 @@ pipeline {
     }
     stage('Test') {
       steps {
+        // Очистка перед тестом
+        sh 'docker-compose down --rmi local --volumes --remove-orphans || true'
+        
+        // Запуск тестового окружения
         sh 'docker-compose up -d'
-        sh 'sleep 15'  // Увеличил задержку для надежности
-        sh 'docker exec app_web-server curl http://localhost:8080'  // Проверка веб-сервера
-        sh 'docker-compose down'
+        sh 'sleep 20'
+        
+        // Проверка веб-сервера (имя контейнера: app_web-server_1)
+        sh 'docker exec $(docker ps -q -f name=app_web-server) curl -f http://localhost || exit 1'
+        
+        // Очистка после теста
+        sh 'docker-compose down --rmi local --volumes --remove-orphans'
       }
     }
     stage('Push to Docker Hub') {
@@ -37,11 +42,9 @@ pipeline {
         }
       }
     }
-    stage('Deploy to Swarm with Canary') {
+    stage('Deploy to Swarm') {
       steps {
         sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'
-        sh 'docker service update --image ${DOCKER_HUB_USER}/crudback:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_web-server'
-        sh 'docker service update --image ${DOCKER_HUB_USER}/mysql:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_db'
         sh 'sleep 30'
         sh 'docker service ls'
       }
@@ -49,7 +52,7 @@ pipeline {
   }
   post {
     always {
-      sh 'docker logout'
+      sh 'docker logout || true'
     }
   }
 }
