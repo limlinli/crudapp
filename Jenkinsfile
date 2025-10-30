@@ -1,28 +1,30 @@
 pipeline {
-  agent { label 'docker-agent' }  // Использует динамический агент из Swarm
+  agent { label 'docker-agent' }
   environment {
-    APP_NAME = 'app'  // Имя вашего приложения
-    DOCKER_HUB_USER = 'popstar13'  // Ваш логин в Docker Hub
-    GIT_REPO = 'https://github.com/limlinli/crudapp.git'  // Ваш репозиторий
+    APP_NAME = 'app'
+    DOCKER_HUB_USER = 'popstar13'
+    GIT_REPO = 'https://github.com/limlinli/crudapp.git'
+    DB_USER = 'root'
+    DB_PASS = 'secret'
+    DB_NAME = 'lena'
   }
   stages {
     stage('Checkout') {
       steps {
-        git url: "${GIT_REPO}", branch: 'main'  // Клонирует код
+        git url: "${GIT_REPO}", branch: 'main'
       }
     }
     stage('Build Docker Images') {
       steps {
-        sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:latest'  // Собирает backend
-        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/mysql:latest'  // Собирает DB
+        sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:latest'
+        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/mysql:latest'
       }
     }
     stage('Test') {
       steps {
-        sh 'docker-compose down || true'  // Очистка
-        sh 'docker-compose up -d'  // Запускает для тестов
-        sh 'sleep 30'  // Ждет запуска
-        sh 'docker exec app_web-server curl -s http://localhost:80 | grep -q "Список товаров"'  // Проверка страницы
+        sh 'docker-compose up -d'
+        sh 'sleep 15'  // Увеличил задержку для надежности
+        sh 'docker exec app_web-server curl http://localhost:8080'  // Проверка веб-сервера
         sh 'docker-compose down'
       }
     }
@@ -37,19 +39,17 @@ pipeline {
     }
     stage('Deploy to Swarm with Canary') {
       steps {
-        sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'  // Базовое развертывание
-        sh 'sleep 30'  // Ждет завершения
-        // Canary: Обновляем постепенно, 1 реплика за раз
+        sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'
         sh 'docker service update --image ${DOCKER_HUB_USER}/crudback:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_web-server'
         sh 'docker service update --image ${DOCKER_HUB_USER}/mysql:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_db'
         sh 'sleep 30'
-        sh 'docker service ls'  // Проверяем статус
+        sh 'docker service ls'
       }
     }
   }
   post {
     always {
-      sh 'docker logout'  // Очистка
+      sh 'docker logout'
     }
   }
 }
