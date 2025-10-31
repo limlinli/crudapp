@@ -1,9 +1,8 @@
 pipeline {
   agent { label 'docker-agent' }
   environment {
-    APP_NAME = 'app'
+    APP_NAME = 'crudapp'
     DOCKER_HUB_USER = 'popstar13'
-    GIT_REPO = 'https://github.com/limlinli/crudapp.git'
   }
   stages {
     stage('Cleanup') {
@@ -14,14 +13,14 @@ pipeline {
         '''
       }
     }
-    stage('Validate docker-compose.yaml') {
+    stage('Validate Config') {
       steps {
-        sh 'docker-compose config -q'  // Проверка синтаксиса
+        sh 'docker-compose config -q'  // Проверка docker-compose.yaml
       }
     }
     stage('Checkout') {
       steps {
-        git url: "${GIT_REPO}", branch: 'main'
+        checkout scm
       }
     }
     stage('Build Images') {
@@ -30,53 +29,50 @@ pipeline {
         sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/mysql:latest'
       }
     }
-    stage('Test') {
+    stage('Full Test') {
       steps {
-        sh 'docker-compose up -d'
-        sh 'sleep 30'
-
-        // Автоматически получить порты из docker-compose.yaml
         script {
-          def compose = readYaml file: 'docker-compose.yaml'
-          def webPort = compose.services.'web-server'.ports[0].split(':')[0]
-          def phpmyadminPort = compose.services.phpmyadmin.ports[0].split(':')[0]
+          // 1. Запуск
+          sh 'docker-compose up -d'
+          echo "Waiting 40 seconds for services to start..."
+          sh 'sleep 40'
 
-          echo "Detected web port: ${webPort}"
-          echo "Detected phpMyAdmin port: ${phpmyadminPort}"
+          // 2. Получаем порты из запущенных контейнеров
+          def webPort = sh(script: "docker port \$(docker ps -q -f name=web-server) | head -1 | cut -d: -f2", returnStdout: true).trim()
+          def pmaPort = sh(script: "docker port \$(docker ps -q -f name=phpmyadmin) | head -1 | cut -d: -f2", returnStdout: true).trim()
 
-          // Проверка: веб-сервер отвечает
-          sh """
-            WEB_CONTAINER=\$(docker ps -q -f name=web-server)
-            docker exec \$WEB_CONTAINER curl -f http://localhost || exit 1
-          """
+          echo "Web server port: ${webPort}"
+          echo "phpMyAdmin port: ${pmaPort}"
 
-          // Проверка: порты доступны с хоста
+          // 3. Проверка: веб-сервер отвечает
           sh "curl -f http://localhost:${webPort} || exit 1"
-          sh "curl -f http://localhost:${phpmyadminPort} || exit 1"
 
-          // Проверка: MySQL работает
-          sh """
-            until docker exec \$(docker ps -q -f name=db) mysqladmin ping -h localhost --silent; do
+          // 4. Проверка: phpMyAdmin отвечает
+          sh "curl -f http://localhost:${pmaPort} || exit 1"
+
+          // 5. Проверка: MySQL жив
+          sh '''
+            until docker exec $(docker ps -q -f name=db) mysqladmin ping -hlocalhost --silent; do
               sleep 2
             done
-          """
+          '''
 
-          // Проверка: приложение подключается к БД
-          sh """
-            WEB_CONTAINER=\$(docker ps -q -f name=web-server)
-            docker exec \$WEB_CONTAINER php -r "
+          // 6. Проверка: PHP подключается к БД
+          sh '''
+            WEB_CONTAINER=$(docker ps -q -f name=web-server)
+            docker exec $WEB_CONTAINER php -r "
               \$link = @mysqli_connect('db', 'root', 'secret', 'lena');
               if (!\$link) { echo 'DB connection failed'; exit(1); }
               echo 'DB connection OK';
             " || exit 1
-          """
+          '''
         }
       }
     }
-    stage('Push') {
+    stage('Push to Docker Hub') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-          sh 'docker login -u \$DOCKER_USER -p \$DOCKER_PASS'
+        withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+          sh 'docker login -u $USER -p $PASS'
           sh 'docker push ${DOCKER_HUB_USER}/crudback:latest'
           sh 'docker push ${DOCKER_HUB_USER}/mysql:latest'
         }
@@ -85,8 +81,9 @@ pipeline {
     stage('Deploy to Swarm') {
       steps {
         sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'
-        sh 'sleep 40'
+        sh 'sleep 30'
         sh 'docker service ls'
+        echo "Application deployed to Swarm: http://<any-node>:${sh(script: "docker port ${APP_NAME}_web-server 80/tcp | head -1 | cut -d: -f2", returnStdout: true).trim()}"
       }
     }
   }
@@ -96,7 +93,10 @@ pipeline {
       sh 'docker logout || true'
     }
     success {
-      echo 'Pipeline passed! Application works with current docker-compose.yaml'
+      echo "FULL SUCCESS: Application is 100% working and deployed to Swarm!"
+    }
+    failure {
+      echo "TEST FAILED: Check logs above."
     }
   }
 }
