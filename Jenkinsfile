@@ -19,17 +19,31 @@ pipeline {
       }
     }
 
-    stage('Test') {
+    stage('Test with docker-compose') {
       steps {
-        // Проверяем, что веб-сервер в Swarm отвечает
         sh '''
-          if curl -f http://192.168.0.1:8080; then
-            echo "Тест пройден: веб-сервер отвечает"
+          echo "Запуск тестового окружения..."
+          docker-compose down -v || true  # На всякий случай чистим старое
+          docker-compose up -d
+
+          echo "Ожидание запуска MySQL и PHP..."
+          sleep 20
+
+          echo "Проверка веб-сервера..."
+          if curl -f http://localhost:8080 > /tmp/response.html; then
+            echo "УСПЕХ: Веб-сервер отвечает!"
+            head -n 3 /tmp/response.html
           else
-            echo "Ошибка: веб-сервер не отвечает на порту 8080"
+            echo "ОШИБКА: Веб-сервер не отвечает на порту 8080"
+            docker-compose logs web-server
             exit 1
           fi
         '''
+      }
+      post {
+        always {
+          sh 'docker-compose down -v || true'
+        }
       }
     }
 
@@ -43,7 +57,7 @@ pipeline {
       }
     }
 
-    stage('Deploy to Swarm with Canary') {
+    stage('Deploy to Swarm') {
       steps {
         sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'
         sh 'sleep 10'
