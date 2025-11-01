@@ -1,17 +1,15 @@
 pipeline {
   agent { label 'docker-agent' }
-  triggers {
-        githubPush()
-    }
   environment {
     APP_NAME = 'app'
     DOCKER_HUB_USER = 'popstar13'
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
-    MANAGER_IP = '192.168.0.1'  // ← ваш IP manager-ноды
   }
   stages {
     stage('Checkout') {
-      steps { git url: "${GIT_REPO}", branch: 'main' }
+      steps {
+        git url: "${GIT_REPO}", branch: 'main'
+      }
     }
 
     stage('Build Docker Images') {
@@ -21,39 +19,59 @@ pipeline {
       }
     }
 
-    stage('Test') {
+    stage('Test with docker-compose') {
       steps {
         sh '''
-          echo "Проверка: ${MANAGER_IP}:8080"
-          curl -f http://${MANAGER_IP}:8080 > /dev/null || exit 1
-          echo "Тест пройден"
+          echo "Запуск тестового окружения..."
+          docker-compose down -v || true  # На всякий случай чистим старое
+          docker-compose up -d
+
+          echo "Ожидание запуска MySQL и PHP..."
+          sleep 20
+
+          echo "Проверка веб-сервера..."
+          if curl -f http://localhost:8080 > /tmp/response.html; then
+            echo "УСПЕХ: Веб-сервер отвечает!"
+            head -n 3 /tmp/response.html
+          else
+            echo "ОШИБКА: Веб-сервер не отвечает на порту 8080"
+            docker-compose logs web-server
+            exit 1
+          fi
         '''
+      }
+      post {
+        always {
+          sh 'docker-compose down -v || true'
+        }
       }
     }
 
     stage('Push to Docker Hub') {
       steps {
         withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-          sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+          sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
           sh 'docker push ${DOCKER_HUB_USER}/crudback:latest'
           sh 'docker push ${DOCKER_HUB_USER}/mysql:latest'
         }
       }
     }
 
-    stage('Deploy to Swarm (Canary)') {
+    stage('Deploy to Swarm') {
       steps {
-        sh '''
-          docker stack deploy -c docker-compose.yaml ${APP_NAME}
-          echo "Canary-деплой запущен"
-          sleep 30
-          docker service ls
-        '''
+        sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'
+        sh 'sleep 10'
+        sh 'docker service update --image ${DOCKER_HUB_USER}/crudback:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_web-server'
+        sh 'docker service update --image ${DOCKER_HUB_USER}/mysql:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_db'
+        sh 'sleep 30'
+        sh 'docker service ls'
       }
     }
   }
 
   post {
-    always { sh 'docker logout' }
+    always {
+      sh 'docker logout'
+    }
   }
 }
