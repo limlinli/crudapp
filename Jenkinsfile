@@ -36,7 +36,7 @@ pipeline {
           docker-compose up -d
 
           echo "Ожидание запуска MySQL и PHP..."
-          sleep 25   # MySQL может стартовать дольше
+          sleep 40   # MySQL может стартовать дольше
 
           echo "Проверка веб‑сервера..."
           if ! curl -f http://192.168.0.1:8080 > /tmp/response.html; then
