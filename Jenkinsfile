@@ -20,26 +20,60 @@ pipeline {
     }
 
     stage('Test with docker-compose') {
-      steps {
-        sh '''
-          echo "Запуск тестового окружения..."
-          docker-compose down -v || true  # На всякий случай чистим старое
-          docker-compose up -d
+  steps {
+    sh '''
+      echo "Запуск тестового окружения..."
+      docker-compose down -v || true
+      docker-compose up -d
 
-          echo "Ожидание запуска MySQL и PHP..."
-          sleep 20
+      echo "Ожидание запуска MySQL..."
+      for i in {1..30}; do
+        if docker exec crud-ci-cd-db-1 mysqladmin ping -h localhost -u root -psecret --silent; then
+          echo "MySQL готова!"
+          break
+        fi
+        echo "Ожидание MySQL... ($i/30)"
+        sleep 2
+      done
 
-          echo "Проверка веб-сервера..."
-          if curl -f http://192.168.0.1:8080 > /tmp/response.html; then
-            echo "УСПЕХ: Веб-сервер отвечает!"
-            head -n 3 /tmp/response.html
-          else
-            echo "ОШИБКА: Веб-сервер не отвечает на порту 8080"
-            docker-compose logs web-server
-            exit 1
-          fi
-        '''
-      }
+      echo "Ожидание запуска PHP..."
+      sleep 10
+
+      echo "Проверка веб-сервера..."
+      RESPONSE=$(curl -s -o /tmp/response.html -w "%{http_code}" http://localhost:8080)
+
+      if [ "$RESPONSE" -ne 200 ]; then
+        echo "ОШИБКА: HTTP код $RESPONSE"
+        docker-compose logs web-server
+        exit 1
+      fi
+
+      if grep -q "Connection refused" /tmp/response.html; then
+        echo "ОШИБКА: Приложение не может подключиться к БД"
+        echo "Содержимое страницы:"
+        cat /tmp/response.html
+        docker-compose logs web-server
+        docker-compose logs db
+        exit 1
+      fi
+
+      if grep -q "Fatal error" /tmp/response.html; then
+        echo "ОШИБКА: Фатальная ошибка PHP"
+        cat /tmp/response.html
+        exit 1
+      fi
+
+      echo "УСПЕХ: Приложение работает корректно!"
+      head -n 5 /tmp/response.html
+    '''
+  }
+  post {
+    always {
+      sh 'docker-compose down -v || true'
+    }
+  }
+}
+      
       post {
         always {
           sh 'docker-compose down -v || true'
