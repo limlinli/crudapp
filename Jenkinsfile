@@ -20,43 +20,36 @@ pipeline {
     }
 
     stage('Test with docker-compose') {
-  steps {
-    sh '''
-      echo "=== Запуск тестового окружения ==="
-      docker-compose down -v || true
-      docker-compose up -d
+      steps {
+        sh '''
+          echo "=== Запуск тестового окружения ==="
+          docker-compose down -v || true
+          docker-compose up -d
 
-      echo "Ожидание запуска MySQL и PHP..."
-      sleep 25   # MySQL может стартовать дольше
+          echo "Ожидание запуска MySQL и PHP..."
+          sleep 25   # MySQL может стартовать дольше
 
-      echo "Проверка веб‑сервера..."
-      if ! curl -f http://localhost:8080 > /tmp/response.html; then
-        echo "HTTP‑ошибка (не 2xx/3xx)"
-        docker-compose logs web-server
-        exit 1
-      fi
+          echo "Проверка веб‑сервера..."
+          if ! curl -f http://localhost:8080 > /tmp/response.html; then
+            echo "HTTP‑ошибка (не 2xx/3xx)"
+            docker-compose logs web-server
+            exit 1
+          fi
 
-      # Проверяем, что в ответе НЕТ строки с ошибкой БД
-      if grep -iq "Connection refused\\|Fatal error\\|SQLSTATE" /tmp/response.html; then
-        echo "Ошибка в приложении: проблема с подключением к MySQL"
-        echo "=== Логи web‑server ==="
-        docker-compose logs web-server
-        echo "=== Логи db ==="
-        docker-compose logs db
-        exit 1
-      fi
+          # Проверяем, что в ответе НЕТ строки с ошибкой БД
+          if grep -iq "Connection refused\\|Fatal error\\|SQLSTATE" /tmp/response.html; then
+            echo "Ошибка в приложении: проблема с подключением к MySQL"
+            echo "=== Логи web‑server ==="
+            docker-compose logs web-server
+            echo "=== Логи db ==="
+            docker-compose logs db
+            exit 1
+          fi
 
-      echo "Тест пройден: приложение отвечает корректно"
-      head -n 5 /tmp/response.html
-    '''
-  }
-  post {
-    always {
-      sh 'docker-compose down -v || true'
-    }
-  }
-}
-      
+          echo "Тест пройден: приложение отвечает корректно"
+          head -n 5 /tmp/response.html
+        '''
+      }
       post {
         always {
           sh 'docker-compose down -v || true'
