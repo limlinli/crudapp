@@ -1,2 +1,2 @@
 FROM mysql:8.0
-COPY ./dump/len
+COPY ./dump/lena.sql /docker-entrypoint-initdb.d/init.sql
