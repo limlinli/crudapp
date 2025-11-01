@@ -78,10 +78,10 @@ pipeline {
 
     stage('Deploy to Swarm') {
       steps {
-        sh '''
-            docker stack deploy -c docker-compose.yaml ${APP_NAME} \
-            --with-registry-auth
-        '''
+        sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'
+        sh 'sleep 10'
+        sh 'docker service update --image ${DOCKER_HUB_USER}/crudback:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_web-server'
+        sh 'docker service update --image ${DOCKER_HUB_USER}/mysql:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_db'
         sh 'sleep 30'
         sh 'docker service ls'
       }
