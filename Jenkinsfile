@@ -23,7 +23,8 @@ pipeline {
       steps {
         sh '''
           echo "Запуск тестового окружения..."
-          docker-compose down -v || true  # На всякий случай чистим старое
+          docker stack rm ${APP_NAME} || true
+          docker-compose down -v || true  
           docker-compose up -d
 
           echo "Ожидание запуска MySQL и PHP..."
