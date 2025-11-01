@@ -23,7 +23,7 @@ pipeline {
       steps {
         // Проверяем, что веб-сервер в Swarm отвечает
         sh '''
-          if curl -f http://localhost:8080; then
+          if curl -f http://192.168.0.1:8080; then
             echo "Тест пройден: веб-сервер отвечает"
           else
             echo "Ошибка: веб-сервер не отвечает на порту 8080"
