@@ -18,6 +18,15 @@ pipeline {
         sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/mysql:latest'
       }
     }
+    stage('Stop Production Stack') {
+      steps {
+        sh '''
+          echo "Остановка стека app для теста..."
+          docker stack rm ${APP_NAME} || true  # Игнорируем, если не запущен
+          sleep 10  # Ждём полной остановки
+        '''
+      }
+    }
 
     stage('Test with docker-compose') {
       steps {
