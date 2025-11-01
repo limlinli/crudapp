@@ -1,5 +1,8 @@
 pipeline {
   agent { label 'docker-agent' }
+  triggers {
+        githubPush()
+    }
   environment {
     APP_NAME = 'app'
     DOCKER_HUB_USER = 'popstar13'
