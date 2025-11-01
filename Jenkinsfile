@@ -4,6 +4,9 @@ pipeline {
     APP_NAME = 'app'
     DOCKER_HUB_USER = 'popstar13'
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
+    // Добавляем тег для текущего билда
+    BUILD_TAG = "build-${BUILD_NUMBER}"
+    PREVIOUS_TAG = "previous-stable"
   }
   stages {
     stage('Checkout') {
@@ -12,19 +15,23 @@ pipeline {
       }
     }
 
-    stage('Build Docker Images') {
-      steps {
-        sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:latest'
-        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/mysql:latest'
-      }
-    }
-    stage('Stop Production Stack') {
+    stage('Backup Current Stack') {
       steps {
         sh '''
-          echo "Остановка стека app для теста..."
-          docker stack rm ${APP_NAME} || true  # Игнорируем, если не запущен
-          sleep 10  # Ждём полной остановки
+          # Сохраняем информацию о текущем стеке
+          echo "=== Резервное копирование текущего стека ==="
+          docker stack services ${APP_NAME} --format "{{.Image}}" > current_images.txt || true
         '''
+      }
+    }
+
+    stage('Build Docker Images') {
+      steps {
+        sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:${BUILD_TAG}'
+        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/mysql:${BUILD_TAG}'
+        // Также тегируем как latest для тестов
+        sh 'docker tag ${DOCKER_HUB_USER}/crudback:${BUILD_TAG} ${DOCKER_HUB_USER}/crudback:latest'
+        sh 'docker tag ${DOCKER_HUB_USER}/mysql:${BUILD_TAG} ${DOCKER_HUB_USER}/mysql:latest'
       }
     }
 
@@ -36,7 +43,7 @@ pipeline {
           docker-compose up -d
 
           echo "Ожидание запуска MySQL и PHP..."
-          sleep 60   # MySQL может стартовать дольше
+          sleep 60
 
           echo "Проверка веб‑сервера..."
           if ! curl -f http://192.168.0.1:8080 > /tmp/response.html; then
@@ -45,18 +52,14 @@ pipeline {
             exit 1
           fi
 
-          # Проверяем, что в ответе НЕТ строки с ошибкой БД
           if grep -iq "Connection refused\\|Fatal error\\|SQLSTATE" /tmp/response.html; then
             echo "Ошибка в приложении: проблема с подключением к MySQL"
-            echo "=== Логи web‑server ==="
             docker-compose logs web-server
-            echo "=== Логи db ==="
             docker-compose logs db
             exit 1
           fi
 
           echo "Тест пройден: приложение отвечает корректно"
-          head -n 5 /tmp/response.html
         '''
       }
       post {
@@ -70,6 +73,8 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
           sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
+          sh 'docker push ${DOCKER_HUB_USER}/crudback:${BUILD_TAG}'
+          sh 'docker push ${DOCKER_HUB_USER}/mysql:${BUILD_TAG}'
           sh 'docker push ${DOCKER_HUB_USER}/crudback:latest'
           sh 'docker push ${DOCKER_HUB_USER}/mysql:latest'
         }
@@ -78,19 +83,59 @@ pipeline {
 
     stage('Deploy to Swarm') {
       steps {
-        sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME}'
-        sh 'sleep 10'
-        sh 'docker service update --image ${DOCKER_HUB_USER}/crudback:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_web-server'
-        sh 'docker service update --image ${DOCKER_HUB_USER}/mysql:latest --update-delay 10s --update-parallelism 1 ${APP_NAME}_db'
-        sh 'sleep 30'
-        sh 'docker service ls'
+        sh '''
+          echo "=== Деплой новой версии ==="
+          # Обновляем docker-compose.yaml для использования BUILD_TAG
+          sed -i "s|image:.*crudback.*|image: ${DOCKER_HUB_USER}/crudback:${BUILD_TAG}|g" docker-compose.yaml
+          sed -i "s|image:.*mysql.*|image: ${DOCKER_HUB_USER}/mysql:${BUILD_TAG}|g" docker-compose.yaml
+          
+          docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
+          sleep 30
+          
+          echo "=== Проверка деплоя ==="
+          if ! docker service ls | grep "${APP_NAME}" | grep "1/1"; then
+            echo "Сервисы не запустились корректно"
+            exit 1
+          fi
+        '''
       }
     }
   }
 
   post {
+    success {
+      sh '''
+        echo "=== Деплой успешен, помечаем как стабильную версию ==="
+        docker tag ${DOCKER_HUB_USER}/crudback:${BUILD_TAG} ${DOCKER_HUB_USER}/crudback:${PREVIOUS_TAG}
+        docker tag ${DOCKER_HUB_USER}/mysql:${BUILD_TAG} ${DOCKER_HUB_USER}/mysql:${PREVIOUS_TAG}
+        docker push ${DOCKER_HUB_USER}/crudback:${PREVIOUS_TAG}
+        docker push ${DOCKER_HUB_USER}/mysql:${PREVIOUS_TAG}
+      '''
+    }
+    failure {
+      sh '''
+        echo "=== Деплой не удался, откат на предыдущую версию ==="
+        # Восстанавливаем оригинальный docker-compose.yaml
+        git checkout docker-compose.yaml
+        
+        # Пытаемся запустить предыдущую стабильную версию
+        if docker pull ${DOCKER_HUB_USER}/crudback:${PREVIOUS_TAG} && docker pull ${DOCKER_HUB_USER}/mysql:${PREVIOUS_TAG}; then
+          echo "Запуск предыдущей стабильной версии..."
+          sed -i "s|image:.*crudback.*|image: ${DOCKER_HUB_USER}/crudback:${PREVIOUS_TAG}|g" docker-compose.yaml
+          sed -i "s|image:.*mysql.*|image: ${DOCKER_HUB_USER}/mysql:${PREVIOUS_TAG}|g" docker-compose.yaml
+          docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
+          echo "Откат выполнен успешно"
+        else
+          echo "Предыдущая стабильная версия не найдена, оставляем как есть"
+        fi
+      '''
+    }
     always {
       sh 'docker logout'
+      sh '''
+        # Очистка локальных образов
+        docker rmi ${DOCKER_HUB_USER}/crudback:latest ${DOCKER_HUB_USER}/mysql:latest || true
+      '''
     }
   }
 }
