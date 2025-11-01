@@ -108,4 +108,4 @@ pipeline {
       sh 'docker logout'
     }
   }
-}
+
