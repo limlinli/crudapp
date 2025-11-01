@@ -28,10 +28,10 @@ pipeline {
           docker-compose up -d
 
           echo "Ожидание запуска MySQL и PHP..."
-          sleep 20
+          sleep 60
 
           echo "Проверка веб-сервера..."
-          if curl -f http://localhost:8080 > /tmp/response.html; then
+          if curl -f http://192.168.0.1:8080 > /tmp/response.html; then
             echo "УСПЕХ: Веб-сервер отвечает!"
             head -n 3 /tmp/response.html
           else
