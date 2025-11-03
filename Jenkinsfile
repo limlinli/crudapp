@@ -1,5 +1,5 @@
 pipeline {
-  agent { label 'docker-build swarm swarm-agent' }
+  agent { label 'docker-build' }
   environment {
     APP_NAME = 'app'
     DOCKER_HUB_USER = 'popstar13'
