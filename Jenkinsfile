@@ -79,7 +79,7 @@ pipeline {
           attempt=1
           
           while [ $attempt -le $max_attempts ]; do
-            if curl -f -s -o /dev/null -w "%{http_code}" http://192.168.0.1:8080 | grep -q "200"; then
+            if curl -f -s -o /dev/null -w "%{http_code}" http://localhost:8080 | grep -q "200"; then
               echo "Приложение доступно!"
               break
             else
@@ -96,7 +96,7 @@ pipeline {
           fi
 
           # Проверка содержимого
-          if curl -s http://192.168.0.1:8080 | grep -iq "error\\|exception\\|connection refused"; then
+          if curl -s http://localhost:8080 | grep -iq "error\\|exception\\|connection refused"; then
             echo "Обнаружены ошибки в ответе приложения"
             docker-compose logs
             exit 1
@@ -188,7 +188,7 @@ pipeline {
           sleep 30
           
           # Попытка доступа к приложению
-          APP_URL="http://192.168.0.1:8080"  # Или ваш реальный URL
+          APP_URL="http://localhost:8080"  # Или ваш реальный URL
           echo "Проверка доступности приложения по URL: $APP_URL"
           
           if curl -f -s -o /dev/null -w "HTTP: %{http_code}\n" "$APP_URL"; then
@@ -211,6 +211,9 @@ pipeline {
         docker image prune -f || true
       '''
       
+      // Можно добавить уведомления
+     
+    }
     
     failure {
       echo "❌ Ошибка в пайплайне — выполняем откат"
