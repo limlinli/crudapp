@@ -22,5 +22,4 @@ services:
       replicas: 1
     environment:
       - MYSQL_ROOT_PASSWORD=canary_password  # Отдельный пароль для теста
-    volumes:
-      - mysql_canary_data:/var/lib/mysql
+
