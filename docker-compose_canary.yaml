@@ -2,27 +2,24 @@ version: '3.8'
 
 services:
   php:
-    image: popstar13/crudback:${BUILD_NUMBER}
+    image: ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER}  # Новая версия
     deploy:
-      replicas: 1                  # Canary — только 1 реплика (≈25% при общем 4)
-      restart_policy:
-        condition: on-failure
+      replicas: 1  # 1 реплика для canary (25% трафика)
+      labels:
+        - "traffic.weight=25"  # 25% трафика (если используешь Traefik или аналог)
     ports:
-      - "8081:80"                   # отдельный порт, чтобы не мешать основному стеку
+      - "8081:80"  # Отдельный порт для canary
     environment:
       - APP_ENV=canary
       - DB_HOST=mysql_canary
 
   mysql_canary:
-    image: popstar13/mysql:${BUILD_NUMBER}
+    image: ${DOCKER_HUB_USER}/mysql:${BUILD_NUMBER}
     deploy:
-      replicas  : 1
-      restart_policy:
-        condition: on-failure
+      replicas: 1
     environment:
-      - MYSQL_ROOT_PASSWORD=canary123
-    volumes:
-      - mysql_canary_data:/var/lib/mysql
-
-volumes:
-  mysql_canary_data:
+      - MYSQL_ROOT_PASSWORD=canary_password  # Отдельный пароль для canary
+    healthcheck:  # Для тестирования готовности
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "--password=canary_password"]
+      timeout: 5s
+      retries: 3
