@@ -1,25 +1,24 @@
 version: '3.8'
 
 services:
-  php_canary:
-    image: ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER}  # Новая версия
+  web-server:
+    image: ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER}
     deploy:
-      replicas: 1  # Canary: 1 реплика (тест на 1 ноде)
+      replicas: 2
       labels:
-        - "traefik.http.routers.canary.rule=PathPrefix(`/canary`)"  # Маршрутизация трафика
-      update_config:
-        parallelism: 1
-        delay: 10s
+        - "traffic.weight=25"
     ports:
-      - "8081:80"  # Отдельный порт для canary
+      - "8081:80"
     environment:
       - APP_ENV=canary
-      - DB_HOST=mysql_canary
+      - DB_HOST=db_canary
+    depends_on:
+      - db_canary
 
-  mysql_canary:
+  db_canary:
     image: ${DOCKER_HUB_USER}/mysql:${BUILD_NUMBER}
     deploy:
       replicas: 1
     environment:
-      - MYSQL_ROOT_PASSWORD=canary_password  # Отдельный пароль для теста
-
+      - MYSQL_ROOT_PASSWORD=secret
+      - MYSQL_DATABASE=lena
