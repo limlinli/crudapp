@@ -56,41 +56,44 @@ pipeline {
     }
 
     stage('Canary Testing') {
-      steps {
-        sh '''
-          echo "=== Тестирование Canary-версии ==="
-          
-          # Тестируем канарейку
-          CANARY_SUCCESS=0
-          CANARY_TESTS=10
-          
-          for i in $(seq 1 $CANARY_TESTS); do
-            echo "Тест $i/$CANARY_TESTS..."
-            if curl -f --max-time 10 http://192.168.0.1:8081/ > /tmp/canary_response_$i.html 2>/dev/null; then
-              if ! grep -iq "error\\|fail\\|exception" /tmp/canary_response_$i.html; then
-                ((CANARY_SUCCESS++))
-                echo "✓ Тест $i пройден"
-              else
-                echo "✗ Тест $i: обнаружены ошибки в ответе"
-              fi
-            else
-              echo "✗ Тест $i: HTTP ошибка"
-            fi
-            sleep 5
-          done
-          
-          echo "Результаты тестирования: $CANARY_SUCCESS/$CANARY_TESTS успешных тестов"
-          
-          # Требуем минимум 80% успешных тестов
-          if [ $CANARY_SUCCESS -lt $((CANARY_TESTS * 80 / 100)) ]; then
-            echo "✗ Canary-тестирование провалено"
-            exit 1
+  steps {
+    sh '''
+      echo "=== Тестирование Canary-версии ==="
+
+      CANARY_SUCCESS=0
+      CANARY_TESTS=10
+
+      for i in $(seq 1 $CANARY_TESTS); do
+        echo "Тест $i/$CANARY_TESTS..."
+
+        # Попробуем главную страницу (у тебя точно работает /, а не /health-check)
+        if curl -f -s --max-time 15 http://192.168.0.1:8081/ > /tmp/canary_response_$i.html; then
+          if ! grep -iq "error\\|fatal\\|exception\\|failed\\|warning" /tmp/canary_response_$i.html; then
+            CANARY_SUCCESS=$((CANARY_SUCCESS + 1))
+            echo "Успешно Тест $i пройден — приложение отвечает"
+          else
+            echo "Ошибка Тест $i: в ответе есть слово error/fatal"
+            cat /tmp/canary_response_$i.html | head -20
           fi
-          
-          echo "✓ Canary-тестирование успешно пройдено"
-        '''
-      }
-    }
+        else
+          echo "Ошибка Тест $i: нет ответа 200"
+        fi
+
+        sleep 6
+      done
+
+      echo "Результаты: $CANARY_SUCCESS из $CANARY_TESTS успешных"
+
+      if [ "$CANARY_SUCCESS" -ge 8 ]; then
+        echo "Успешно Canary-тестирование пройдено!"
+      else
+        echo "Ошибка Canary-тестирование провалено ($CANARY_SUCCESS/10)"
+        exit 1
+      fi
+    '''
+  }
+}
+
 
     stage('Gradual Traffic Shift') {
       steps {
