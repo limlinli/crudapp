@@ -66,7 +66,7 @@ pipeline {
           
           for i in $(seq 1 $CANARY_TESTS); do
             echo "Тест $i/$CANARY_TESTS..."
-            if curl -f --max-time 10 http://192.168.0.1:8081/health-check > /tmp/canary_response_$i.html 2>/dev/null; then
+            if curl -f --max-time 10 http://192.168.0.1:8081/k > /tmp/canary_response_$i.html 2>/dev/null; then
               if ! grep -iq "error\\|fail\\|exception" /tmp/canary_response_$i.html; then
                 ((CANARY_SUCCESS++))
                 echo "✓ Тест $i пройден"
