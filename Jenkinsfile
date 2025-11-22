@@ -65,7 +65,7 @@ pipeline {
           
           for i in $(seq 1 $TESTS); do
             echo "Тест $i/$TESTS..."
-            if curl -f --max-time 10 http://192.168.0.1:8081/health-check; then
+            if curl -f --max-time 10 http://192.168.0.1:8081/index.php; then
               ((CANARY_SUCCESS++))
               echo "✓ Тест $i пройден"
             else
