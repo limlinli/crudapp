@@ -44,7 +44,7 @@ pipeline {
           echo "=== Развертывание Canary (${CANARY_PERCENTAGE}% трафика) ==="
           
           # Создаем canary stack с ограниченным количеством реплик
-          docker stack deploy -c docker-compose.canary.yaml ${CANARY_APP_NAME} --with-registry-auth
+          docker stack deploy -c docker-compose_canary.yaml ${CANARY_APP_NAME} --with-registry-auth
           
           echo "Ожидание запуска canary-сервисов..."
           sleep 30
