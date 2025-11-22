@@ -6,7 +6,6 @@ pipeline {
     DOCKER_HUB_USER = 'popstar13'
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
     CANARY_PERCENTAGE = '25' // 25% трафика на канарейку
-  //  BUILD_NUMBER = env.BUILD_NUMBER  // Автоматический номер сборки
   }
 
   stages {
@@ -20,6 +19,8 @@ pipeline {
       steps {
         sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER}'
         sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/mysql:${BUILD_NUMBER}'
+        sh 'docker tag ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER} ${DOCKER_HUB_USER}/crudback:latest'
+        sh 'docker tag ${DOCKER_HUB_USER}/mysql:${BUILD_NUMBER} ${DOCKER_HUB_USER}/mysql:latest'
       }
     }
 
@@ -27,9 +28,11 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
           sh '''
-            docker login -u $DOCKER_USER -p $DOCKER_PASS
+            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
             docker push ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER}
             docker push ${DOCKER_HUB_USER}/mysql:${BUILD_NUMBER}
+            docker push ${DOCKER_HUB_USER}/crudback:latest
+            docker push ${DOCKER_HUB_USER}/mysql:latest
           '''
         }
       }
@@ -38,9 +41,15 @@ pipeline {
     stage('Deploy Canary') {
       steps {
         sh '''
-          echo "Развертывание Canary (25% трафика)..."
-          docker stack deploy -c docker-compose_canary.yaml ${CANARY_APP_NAME}
-          sleep 30  # Ждём запуска
+          echo "=== Развертывание Canary (${CANARY_PERCENTAGE}% трафика) ==="
+          
+          # Развертывание canary stack с 1 репликой
+          docker stack deploy -c docker-compose_canary.yaml ${CANARY_APP_NAME} --with-registry-auth
+          
+          echo "Ожидание запуска canary-сервисов..."
+          sleep 30
+          
+          # Проверка статуса
           docker service ls --filter name=${CANARY_APP_NAME}
         '''
       }
@@ -49,17 +58,30 @@ pipeline {
     stage('Canary Testing') {
       steps {
         sh '''
-          echo "Тестирование Canary..."
-          for i in $(seq 1 10); do
-            if curl -f http://192.168.0.1:8081; then  # Порт canary
-              echo "Тест $i: OK"
+          echo "=== Тестирование Canary-версии ==="
+          
+          CANARY_SUCCESS=0
+          TESTS=10
+          
+          for i in $(seq 1 $TESTS); do
+            echo "Тест $i/$TESTS..."
+            if curl -f --max-time 10 http://192.168.0.1:8081/health-check; then
+              ((CANARY_SUCCESS++))
+              echo "✓ Тест $i пройден"
             else
-              echo "Тест $i: Ошибка"
-              exit 1
+              echo "✗ Тест $i: ошибка"
             fi
             sleep 5
           done
-          echo "Canary тест пройден!"
+          
+          echo "Результаты: $CANARY_SUCCESS/$TESTS успешных"
+          
+          if [ $CANARY_SUCCESS -lt $((TESTS * 80 / 100)) ]; then
+            echo "✗ Canary провален"
+            exit 1
+          fi
+          
+          echo "✓ Canary успешен"
         '''
       }
     }
@@ -67,14 +89,21 @@ pipeline {
     stage('Gradual Traffic Shift') {
       steps {
         sh '''
-          echo "Переключение трафика: 50%..."
-          docker service scale ${APP_NAME}_web-server=2
-          docker service scale ${CANARY_APP_NAME}_php=2
-          sleep 60  # Мониторинг
+          echo "=== Постепенное переключение трафика ==="
           
-          echo "Переключение трафика: 100%..."
-          docker stack rm ${APP_NAME}  # Удаляем старый
-          docker stack deploy -c docker-compose.yaml ${APP_NAME}  # Полный деплой новой версии
+          # Этап 1: 50% трафика на новую версию
+          echo "Этап 1: 50% трафика"
+          docker service update --replicas 2 ${APP_NAME}_web-server --image ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER}
+          docker service update --replicas 1 ${CANARY_APP_NAME}_php
+          sleep 60
+          
+          # Мониторинг
+          docker service ls
+          
+          # Этап 2: 100% трафика на новую версию
+          echo "Этап 2: 100% трафика"
+          docker service update --replicas 2 ${APP_NAME}_web-server --image ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER}
+          docker stack rm ${CANARY_APP_NAME}
           sleep 30
         '''
       }
@@ -83,20 +112,35 @@ pipeline {
     stage('Final Verification') {
       steps {
         sh '''
-          echo "Финальная проверка..."
-          docker service ls
-          curl -f http://192.168.0.1:8080  # Порт прод
+          echo "=== Финальная проверка ==="
+          
+          # Проверка сервисов
+          docker service ls --filter name=${APP_NAME}
+          
+          # Финальные тесты
+          for i in $(seq 1 5); do
+            curl -f --max-time 10 http://192.168.0.1:8080/health-check || exit 1
+            echo "✓ Финальный тест $i пройден"
+            sleep 5
+          done
+          
+          echo "✓ Всё OK"
         '''
       }
     }
   }
 
   post {
-    success { echo "Canary деплой успешен!" }
-    failure {
-      echo "Откат..."
-      sh 'docker stack rm ${CANARY_APP_NAME}'  
+    success {
+      echo "✓ Canary-деплой успешен"
+      sh 'docker logout'
+      sh 'docker image prune -f'
     }
-    always { sh 'docker logout' }
+    failure {
+      echo "✗ Ошибка — откат"
+      sh 'docker stack rm ${CANARY_APP_NAME} || true'
+      sh 'docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth'
+      sh 'docker logout'
+    }
   }
 }
