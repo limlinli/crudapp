@@ -6,7 +6,7 @@ pipeline {
     DOCKER_HUB_USER = 'popstar13'
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
     CANARY_PERCENTAGE = '25' // 25% трафика на канарейку
-    BUILD_NUMBER = env.BUILD_NUMBER  // Автоматический номер сборки
+  //  BUILD_NUMBER = env.BUILD_NUMBER  // Автоматический номер сборки
   }
 
   stages {
