@@ -11,11 +11,11 @@ services:
       - "8081:80"
     environment:
       - APP_ENV=canary
-      - DB_HOST=db_canary
+      - DB_HOST=db
     depends_on:
-      - db_canary
+      - db
 
-  db_canary:
+  db:
     image: ${DOCKER_HUB_USER}/mysql:${BUILD_NUMBER}
     deploy:
       replicas: 1
