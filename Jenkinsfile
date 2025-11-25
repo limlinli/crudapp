@@ -159,21 +159,19 @@ pipeline {
         docker image prune -f
       '''
     }
+    
     failure {
-      echo "✗ Ошибка в canary-деплое — откат на стабильную версию"
-      sh '''
-        echo "Выполняем откат..."
-        
-        # Останавливаем canary
-        docker stack rm ${CANARY_APP_NAME} || true
-        
-        # Восстанавливаем стабильную версию
-        docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
-        docker service scale ${APP_NAME}_web-server=3
-        
-        echo "Откат завершен"
-      '''
-      sh 'docker logout'
-    }
+    echo "✗ Canary-тестирование провалено - откат не требуется, так как изменения не были применены к продакшену"
+    sh '''
+      echo "Останавливаем canary-сервисы..."
+      docker stack rm ${CANARY_APP_NAME} || true
+      
+      echo "Проверяем, что продакшен-сервисы работают без изменений..."
+      docker service ls --filter name=${APP_NAME}
+      
+      echo "Canary удален, продакшен остался без изменений"
+    '''
+    sh 'docker logout'
+  }
   }
 }
