@@ -5,7 +5,7 @@ pipeline {
     CANARY_APP_NAME = 'app-canary'
     DOCKER_HUB_USER = 'popstar13'
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
-    CANARY_PERCENTAGE = '25' // 25% трафика на канарейку
+    CANARY_PERCENTAGE = '25' 
   }
 
   stages {
@@ -135,7 +135,7 @@ pipeline {
           # Финальное тестирование
           for i in $(seq 1 5); do
             echo "Финальный тест $i/5..."
-            if curl -f --max-time 10 http://192.168.0.1:8080/health-check > /dev/null 2>&1; then
+            if curl -f --max-time 10 http://192.168.0.1:8080/ > /dev/null 2>&1; then
               echo "✓ Финальный тест $i пройден"
             else
               echo "✗ Финальный тест $i не пройден"
@@ -161,12 +161,12 @@ pipeline {
     }
     
     failure {
-    echo "✗ Canary-тестирование провалено - откат не требуется, так как изменения не были применены к продакшену"
+    echo "✗ Canary-тестирование провалено - откат не требуется, так как изменения не были применены"
     sh '''
       echo "Останавливаем canary-сервисы..."
       docker stack rm ${CANARY_APP_NAME} || true
       
-      echo "Проверяем, что продакшен-сервисы работают без изменений..."
+      echo "Проверяем, что prod-сервисы работают без изменений..."
       docker service ls --filter name=${APP_NAME}
       
       echo "Canary удален, продакшен остался без изменений"
