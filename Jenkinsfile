@@ -169,7 +169,7 @@ pipeline {
         
         # Восстанавливаем стабильную версию
         docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
-        docker service scale ${APP_NAME}_web-server=8
+        docker service scale ${APP_NAME}_web-server=3
         
         echo "Откат завершен"
       '''
