@@ -114,7 +114,7 @@ pipeline {
           echo "Этап 2: 100% трафика на новую версию"
           docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
           docker service scale ${APP_NAME}_web-server=8
-          sleep 90
+          sleep 50
           
           # Удаляем canary stack
           echo "Удаление canary stack..."
