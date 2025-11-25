@@ -104,7 +104,7 @@ pipeline {
           echo "Этап 1: 50% трафика на новую версию"
           docker service update --image ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER} ${APP_NAME}_web-server --replicas 3
           docker service update --image ${DOCKER_HUB_USER}/crudback:latest ${CANARY_APP_NAME}_web-server --replicas 2
-          sleep 90
+          sleep 120
           
           # Мониторинг метрик
           echo "Мониторинг метрик после 50% переключения..."
