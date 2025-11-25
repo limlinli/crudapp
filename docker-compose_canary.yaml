@@ -4,7 +4,7 @@ services:
   web-server:
     image: ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER}
     deploy:
-      replicas: 2
+      replicas: 1
       labels:
         - "traffic.weight=25"
     ports:
