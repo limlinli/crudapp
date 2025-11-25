@@ -84,11 +84,11 @@ pipeline {
 
       echo "Результаты: $CANARY_SUCCESS из $CANARY_TESTS успешных"
 
-      if [ "$CANARY_SUCCESS" -ge 8 ]; then
-        echo "Успешно Canary-тестирование пройдено!"
-      else
+      if [ "$CANARY_SUCCESS" -lt 8 ]; then
         echo "Ошибка Canary-тестирование провалено ($CANARY_SUCCESS/10)"
-        exit 1
+        exit 1  # Это прервет пайплайн
+      else
+        echo "Успешно Canary-тестирование пройдено!"
       fi
     '''
   }
