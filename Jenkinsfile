@@ -5,7 +5,7 @@ pipeline {
     CANARY_APP_NAME = 'app-canary'
     DOCKER_HUB_USER = 'popstar13'
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
-    CANARY_PERCENTAGE = '25' // 25% трафика на канарейку
+    CANARY_PERCENTAGE = '40' // 25% трафика на канарейку
   }
 
   stages {
@@ -102,8 +102,8 @@ pipeline {
           
           # Этап 1: 50% трафика на новую версию
           echo "Этап 1: 50% трафика на новую версию"
-          docker service update --image ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER} ${APP_NAME}_web-server --replicas 4
-          docker service update --image ${DOCKER_HUB_USER}/crudback:latest ${CANARY_APP_NAME}_web-server --replicas 4
+          docker service update --image ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER} ${APP_NAME}_web-server --replicas 3
+          docker service update --image ${DOCKER_HUB_USER}/crudback:latest ${CANARY_APP_NAME}_web-server --replicas 2
           sleep 90
           
           # Мониторинг метрик
@@ -113,7 +113,7 @@ pipeline {
           # Этап 2: 100% трафика на новую версию
           echo "Этап 2: 100% трафика на новую версию"
           docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
-          docker service scale ${APP_NAME}_web-server=8
+          docker service scale ${APP_NAME}_web-server=3
           sleep 50
           
           # Удаляем canary stack
