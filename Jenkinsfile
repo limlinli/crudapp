@@ -47,7 +47,7 @@ pipeline {
           docker stack deploy -c docker-compose_canary.yaml ${CANARY_APP_NAME} --with-registry-auth
           
           echo "Ожидание запуска canary-сервисов..."
-          sleep 90
+          sleep 180
           
           # Проверяем статус canary-сервисов
           docker service ls --filter name=${CANARY_APP_NAME}
@@ -104,7 +104,7 @@ pipeline {
           echo "Этап 1: 50% трафика на новую версию"
           docker service update --image ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER} ${APP_NAME}_web-server --replicas 2
           docker service update --image ${DOCKER_HUB_USER}/crudback:latest ${CANARY_APP_NAME}_web-server --replicas 2
-          sleep 120
+          sleep 90
           
           # Мониторинг метрик
           echo "Мониторинг метрик после 50% переключения..."
