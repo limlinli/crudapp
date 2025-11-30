@@ -68,7 +68,7 @@ pipeline {
           for i in $(seq 1 $CANARY_TESTS); do
             echo "Тест $i/$CANARY_TESTS..."
 
-            # Попробуем главную страницу (у тебя точно работает /, а не /health-check)
+            # Попробуем главную страницу
             if curl -f -s --max-time 15 http://192.168.0.1:8081/ > /tmp/canary_response_$i.html; then
               if ! grep -iq "error\\|fatal\\|exception\\|failed\\|warning" /tmp/canary_response_$i.html; then
                 CANARY_SUCCESS=$((CANARY_SUCCESS + 1))
