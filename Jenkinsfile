@@ -6,6 +6,9 @@ pipeline {
     DOCKER_HUB_USER = 'popstar13'
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
     CANARY_PERCENTAGE = '25' 
+    BACKEND_IMAGE_NAME = 'crudback'    // Замените на имя вашего бэкенд образа
+    DATABASE_IMAGE_NAME = 'mysql'  // Замените на имя вашего БД образа
+}
   }
 
   stages {
@@ -17,10 +20,10 @@ pipeline {
 
     stage('Build Docker Images') {
       steps {
-        sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER}'
-        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/mysql:${BUILD_NUMBER}'
-        sh 'docker tag ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER} ${DOCKER_HUB_USER}/crudback:latest'
-        sh 'docker tag ${DOCKER_HUB_USER}/mysql:${BUILD_NUMBER} ${DOCKER_HUB_USER}/mysql:latest'
+        sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}'
+        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:${BUILD_NUMBER}'
+        sh 'docker tag ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:latest'
+        sh 'docker tag ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:${BUILD_NUMBER} ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:latest'
       }
     }
 
@@ -29,10 +32,10 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
           sh '''
             docker login -u $DOCKER_USER -p $DOCKER_PASS
-            docker push ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER}
-            docker push ${DOCKER_HUB_USER}/mysql:${BUILD_NUMBER}
-            docker push ${DOCKER_HUB_USER}/crudback:latest
-            docker push ${DOCKER_HUB_USER}/mysql:latest
+            docker push ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}
+            docker push ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:${BUILD_NUMBER}
+            docker push ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:latest
+            docker push ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:latest
           '''
         }
       }
@@ -106,8 +109,8 @@ pipeline {
         
         # Этап 1: 50% трафика на новую версию
         echo "Этап 1: 50% трафика на новую версию"
-        docker service update --image ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER} ${APP_NAME}_web-server --replicas 2
-        docker service update --image ${DOCKER_HUB_USER}/crudback:latest ${CANARY_APP_NAME}_web-server --replicas 2
+        docker service update --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} ${APP_NAME}_web-server --replicas 2
+        docker service update --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:latest ${CANARY_APP_NAME}_web-server --replicas 2
         sleep 120
         
         # Мониторинг метрик
