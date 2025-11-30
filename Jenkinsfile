@@ -6,9 +6,9 @@ pipeline {
     DOCKER_HUB_USER = 'popstar13'
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
     CANARY_PERCENTAGE = '25' 
-    BACKEND_IMAGE_NAME = 'crudback'    // Замените на имя вашего бэкенд образа
-    DATABASE_IMAGE_NAME = 'mysql'  // Замените на имя вашего БД образа
-    }
+    BACKEND_IMAGE_NAME = 'crudback'
+    DATABASE_IMAGE_NAME = 'mysql'
+  }
 
   stages {
     stage('Checkout') {
@@ -58,92 +58,90 @@ pipeline {
     }
 
     stage('Canary Testing') {
-  steps {
-    sh '''
-      echo "=== Тестирование Canary-версии ==="
+      steps {
+        sh '''
+          echo "=== Тестирование Canary-версии ==="
 
-      CANARY_SUCCESS=0
-      CANARY_TESTS=10
+          CANARY_SUCCESS=0
+          CANARY_TESTS=10
 
-      for i in $(seq 1 $CANARY_TESTS); do
-        echo "Тест $i/$CANARY_TESTS..."
+          for i in $(seq 1 $CANARY_TESTS); do
+            echo "Тест $i/$CANARY_TESTS..."
 
-        # Попробуем главную страницу (у тебя точно работает /, а не /health-check)
-        if curl -f -s --max-time 15 http://192.168.0.1:8081/ > /tmp/canary_response_$i.html; then
-          if ! grep -iq "error\\|fatal\\|exception\\|failed\\|warning" /tmp/canary_response_$i.html; then
-            CANARY_SUCCESS=$((CANARY_SUCCESS + 1))
-            echo "Успешно Тест $i пройден — приложение отвечает"
+            # Попробуем главную страницу (у тебя точно работает /, а не /health-check)
+            if curl -f -s --max-time 15 http://192.168.0.1:8081/ > /tmp/canary_response_$i.html; then
+              if ! grep -iq "error\\|fatal\\|exception\\|failed\\|warning" /tmp/canary_response_$i.html; then
+                CANARY_SUCCESS=$((CANARY_SUCCESS + 1))
+                echo "Успешно Тест $i пройден — приложение отвечает"
+              else
+                echo "Ошибка Тест $i: в ответе есть слово error/fatal"
+                cat /tmp/canary_response_$i.html | head -20
+              fi
+            else
+              echo "Ошибка Тест $i: нет ответа 200"
+            fi
+
+            sleep 6
+          done
+
+          echo "Результаты: $CANARY_SUCCESS из $CANARY_TESTS успешных"
+
+          if [ "$CANARY_SUCCESS" -lt 8 ]; then
+            echo "Ошибка Canary-тестирование провалено ($CANARY_SUCCESS/10)"
+            exit 1  # Это прервет пайплайн
           else
-            echo "Ошибка Тест $i: в ответе есть слово error/fatal"
-            cat /tmp/canary_response_$i.html | head -20
+            echo "Успешно Canary-тестирование пройдено!"
           fi
-        else
-          echo "Ошибка Тест $i: нет ответа 200"
-        fi
-
-        sleep 6
-      done
-
-      echo "Результаты: $CANARY_SUCCESS из $CANARY_TESTS успешных"
-
-      if [ "$CANARY_SUCCESS" -lt 8 ]; then
-        echo "Ошибка Canary-тестирование провалено ($CANARY_SUCCESS/10)"
-        exit 1  # Это прервет пайплайн
-      else
-        echo "Успешно Canary-тестирование пройдено!"
-      fi
-    '''
-  }
-}
-
+        '''
+      }
+    }
 
     stage('Gradual Traffic Shift') {
-  steps {
-    sh '''
-      echo "=== Постепенное переключение трафика ==="
-      
-      # Проверяем, существует ли основной сервис
-      if docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server; then
-        echo "Основной сервис существует, выполняем постепенное переключение..."
-        
-        # Этап 1: 50% трафика на новую версию
-        echo "Этап 1: 50% трафика на новую версию"
-        docker service update --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} ${APP_NAME}_web-server --replicas 2
-        docker service update --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:latest ${CANARY_APP_NAME}_web-server --replicas 2
-        sleep 120
-        
-        # Мониторинг метрик
-        echo "Мониторинг метрик после 50% переключения..."
-        sleep 30
-        
-        # Этап 2: 100% трафика на новую версию
-        echo "Этап 2: 100% трафика на новую версию"
-        docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
-        docker service scale ${APP_NAME}_web-server=3
-        sleep 50
-        
-        # Удаляем canary stack
-        echo "Удаление canary stack..."
-        docker stack rm ${CANARY_APP_NAME}
-        sleep 15
-        
-      else
-        echo "Основной сервис не существует, развертываем продакшен вместо canary..."
-        
-        
-        # Развертываем продакшен
-        docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
-        sleep 60
+      steps {
+        sh '''
+          echo "=== Постепенное переключение трафика ==="
+          
+          # Проверяем, существует ли основной сервис
+          if docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server; then
+            echo "Основной сервис существует, выполняем постепенное переключение..."
+            
+            # Этап 1: 50% трафика на новую версию
+            echo "Этап 1: 50% трафика на новую версию"
+            docker service update --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} ${APP_NAME}_web-server --replicas 2
+            docker service update --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:latest ${CANARY_APP_NAME}_web-server --replicas 2
+            sleep 120
+            
+            # Мониторинг метрик
+            echo "Мониторинг метрик после 50% переключения..."
+            sleep 30
+            
+            # Этап 2: 100% трафика на новую версию
+            echo "Этап 2: 100% трафика на новую версию"
+            docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
+            docker service scale ${APP_NAME}_web-server=3
+            sleep 50
+            
+            # Удаляем canary stack
+            echo "Удаление canary stack..."
+            docker stack rm ${CANARY_APP_NAME}
+            sleep 15
+            
+          else
+            echo "Основной сервис не существует, развертываем продакшен вместо canary..."
+            
+            # Развертываем продакшен
+            docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
+            sleep 60
 
-          # Удаляем canary и развертываем полноценный продакшен
-        docker stack rm ${CANARY_APP_NAME} || true
-        sleep 30
-        
-        echo "Продакшен успешно развернут с нуля"
-      fi
-    '''
-  }
-}
+            # Удаляем canary и развертываем полноценный продакшен
+            docker stack rm ${CANARY_APP_NAME} || true
+            sleep 30
+            
+            echo "Продакшен успешно развернут с нуля"
+          fi
+        '''
+      }
+    }
 
     stage('Final Verification') {
       steps {
@@ -169,7 +167,7 @@ pipeline {
         '''
       }
     }
-  
+  }
 
   post {
     success {
@@ -182,18 +180,17 @@ pipeline {
     }
     
     failure {
-    echo "✗ Canary-тестирование провалено - откат не требуется, так как изменения не были применены"
-    sh '''
-      echo "Останавливаем canary-сервисы..."
-      docker stack rm ${CANARY_APP_NAME} || true
-      
-      echo "Проверяем, что prod-сервисы работают без изменений..."
-      docker service ls --filter name=${APP_NAME}
-      
-      echo "Canary удален, продакшен остался без изменений"
-    '''
-    sh 'docker logout'
+      echo "✗ Canary-тестирование провалено - откат не требуется, так как изменения не были применены"
+      sh '''
+        echo "Останавливаем canary-сервисы..."
+        docker stack rm ${CANARY_APP_NAME} || true
+        
+        echo "Проверяем, что prod-сервисы работают без изменений..."
+        docker service ls --filter name=${APP_NAME}
+        
+        echo "Canary удален, продакшен остался без изменений"
+      '''
+      sh 'docker logout'
+    }
   }
-  }
-}
 }
