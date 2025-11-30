@@ -131,13 +131,14 @@ pipeline {
       else
         echo "Основной сервис не существует, развертываем продакшен вместо canary..."
         
-        # Удаляем canary и развертываем полноценный продакшен
-        docker stack rm ${CANARY_APP_NAME} || true
-        sleep 30
         
         # Развертываем продакшен
         docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
         sleep 60
+
+          # Удаляем canary и развертываем полноценный продакшен
+        docker stack rm ${CANARY_APP_NAME} || true
+        sleep 30
         
         echo "Продакшен успешно развернут с нуля"
       fi
