@@ -3,11 +3,11 @@ pipeline {
   environment {
     APP_NAME = 'app'
     CANARY_APP_NAME = 'app-canary'
-    DOCKER_HUB_USER = 'your-dockerhub-username'
-    GIT_REPO = 'https://github.com/your-username/your-repo.git'
+    DOCKER_HUB_USER = 'popstar13'
+    GIT_REPO = 'https://github.com/limlinli/crudapp.git'
     CANARY_PERCENTAGE = '25' 
-    BACKEND_IMAGE_NAME = 'your-backend-image'
-    DATABASE_IMAGE_NAME = 'your-database-image'
+    BACKEND_IMAGE_NAME = 'crudback'
+    DATABASE_IMAGE_NAME = 'mysql'
   }
 
   stages {
