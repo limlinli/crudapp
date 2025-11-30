@@ -96,33 +96,51 @@ pipeline {
 
 
     stage('Gradual Traffic Shift') {
-      steps {
-        sh '''
-          echo "=== Постепенное переключение трафика ==="
-          
-          # Этап 1: 50% трафика на новую версию
-          echo "Этап 1: 50% трафика на новую версию"
-          docker service update --image ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER} ${APP_NAME}_web-server --replicas 2
-          docker service update --image ${DOCKER_HUB_USER}/crudback:latest ${CANARY_APP_NAME}_web-server --replicas 2
-          sleep 90
-          
-          # Мониторинг метрик
-          echo "Мониторинг метрик после 50% переключения..."
-          sleep 30
-          
-          # Этап 2: 100% трафика на новую версию
-          echo "Этап 2: 100% трафика на новую версию"
-          docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
-          docker service scale ${APP_NAME}_web-server=4
-          sleep 50
-          
-          # Удаляем canary stack
-          echo "Удаление canary stack..."
-          docker stack rm ${CANARY_APP_NAME}
-          sleep 15
-        '''
-      }
-    }
+  steps {
+    sh '''
+      echo "=== Постепенное переключение трафика ==="
+      
+      # Проверяем, существует ли основной сервис
+      if docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server; then
+        echo "Основной сервис существует, выполняем постепенное переключение..."
+        
+        # Этап 1: 50% трафика на новую версию
+        echo "Этап 1: 50% трафика на новую версию"
+        docker service update --image ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER} ${APP_NAME}_web-server --replicas 2
+        docker service update --image ${DOCKER_HUB_USER}/crudback:latest ${CANARY_APP_NAME}_web-server --replicas 2
+        sleep 120
+        
+        # Мониторинг метрик
+        echo "Мониторинг метрик после 50% переключения..."
+        sleep 30
+        
+        # Этап 2: 100% трафика на новую версию
+        echo "Этап 2: 100% трафика на новую версию"
+        docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
+        docker service scale ${APP_NAME}_web-server=3
+        sleep 50
+        
+        # Удаляем canary stack
+        echo "Удаление canary stack..."
+        docker stack rm ${CANARY_APP_NAME}
+        sleep 15
+        
+      else
+        echo "Основной сервис не существует, развертываем продакшен вместо canary..."
+        
+        # Удаляем canary и развертываем полноценный продакшен
+        docker stack rm ${CANARY_APP_NAME} || true
+        sleep 30
+        
+        # Развертываем продакшен
+        docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
+        sleep 60
+        
+        echo "Продакшен успешно развернут с нуля"
+      fi
+    '''
+  }
+}
 
     stage('Final Verification') {
       steps {
