@@ -8,7 +8,7 @@ pipeline {
     CANARY_PERCENTAGE = '25' 
     BACKEND_IMAGE_NAME = 'crudback'    // Замените на имя вашего бэкенд образа
     DATABASE_IMAGE_NAME = 'mysql'  // Замените на имя вашего БД образа
-}
+    }
   }
 
   stages {
