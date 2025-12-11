@@ -89,52 +89,71 @@ pipeline {
     stage('Gradual Traffic Shift') {
   steps {
     script {
-      def serviceExists = sh(script: "docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server", returnStatus: true) == 0
-
-      if (serviceExists) {
+      if (sh(script: "docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server", returnStatus: true) == 0) {
         echo "=== Постепенное обновление продакшена ==="
-
-        // Шаг 1: Обновляем первую реплику
+        
+        // Получаем текущее количество реплик
+        def replicaCount = sh(script: """
+          docker service inspect ${APP_NAME}_web-server --format '{{.Spec.Mode.Replicated.Replicas}}'
+        """, returnStdout: true).trim().toInteger()
+        
+        echo "Текущее количество реплик: ${replicaCount}"
+        
+        // Шаг 1: Обновляем только 1 реплику (используем parallelism=1)
         echo "Шаг 1: Обновляем 1 реплику (33%)"
         sh """
           docker service update \
             --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
-            --replicas 1 \
-            --update-delay 90s \
+            --update-parallelism 1 \
+            --update-monitor 30s \
             --update-order start-first \
+            --update-max-failure-ratio 0 \
             --detach=false \
             ${APP_NAME}_web-server
         """
-        sleep 90
-        sh "docker service ps ${APP_NAME}_web-server | head -20"
-
-        // Шаг 2: Обновляем вторую реплику
+        
+        // Ждем, пока обновится только 1 реплика
+        sleep 60
+        
+        echo "Состояние после шага 1:"
+        sh """
+          docker service ps ${APP_NAME}_web-server --format "table {{.Name}}\t{{.Image}}\t{{.CurrentState}}" | head -15
+          echo "=== Обновлено реплик: 1 из ${replicaCount} ==="
+        """
+        
+        // Шаг 2: Увеличиваем parallelism для обновления второй реплики
         echo "Шаг 2: Обновляем 2 реплику (66%)"
         sh """
           docker service update \
-            --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
-            --replicas 1 \
-            --update-delay 90s \
-            --update-order start-first \
+            --update-parallelism 2 \
             --detach=false \
             ${APP_NAME}_web-server
         """
-        sleep 90
-        sh "docker service ps ${APP_NAME}_web-server | head -20"
-
-        // Шаг 3: Обновляем последнюю реплику
+        
+        sleep 60
+        
+        echo "Состояние после шага 2:"
+        sh """
+          docker service ps ${APP_NAME}_web-server --format "table {{.Name}}\t{{.Image}}\t{{.CurrentState}}" | head -15
+          echo "=== Обновлено реплик: 2 из ${replicaCount} ==="
+        """
+        
+        // Шаг 3: Увеличиваем parallelism для обновления всех реплик
         echo "Шаг 3: Обновляем 3 реплику (100%)"
         sh """
           docker service update \
-            --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
-            --replicas 1 \
-            --update-delay 90s \
-            --update-order start-first \
+            --update-parallelism ${replicaCount} \
             --detach=false \
             ${APP_NAME}_web-server
         """
-        sleep 90
-        sh "docker service ps ${APP_NAME}_web-server | head -20"
+        
+        sleep 60
+        
+        echo "Финальное состояние:"
+        sh """
+          docker service ps ${APP_NAME}_web-server --format "table {{.Name}}\t{{.Image}}\t{{.CurrentState}}" | head -15
+          echo "=== Все реплики обновлены ==="
+        """
 
         // Удаляем canary
         echo "Удаление canary stack..."
