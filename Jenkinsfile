@@ -102,7 +102,7 @@ pipeline {
             --update-parallelism 1 \
             --update-delay 90s \
             --update-order start-first \
-            --detach=true \
+            --detach=false \
             ${APP_NAME}_web-server
         """
         sleep 90
@@ -116,7 +116,7 @@ pipeline {
             --update-parallelism 1 \
             --update-delay 90s \
             --update-order start-first \
-            --detach=true \
+            --detach=false \
             ${APP_NAME}_web-server
         """
         sleep 90
@@ -130,7 +130,7 @@ pipeline {
             --update-parallelism 1 \
             --update-delay 90s \
             --update-order start-first \
-            --detach=true \
+            --detach=false \
             ${APP_NAME}_web-server
         """
         sleep 90
