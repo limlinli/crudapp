@@ -41,7 +41,7 @@ pipeline {
         sh '''
           echo "=== Развертывание Canary ==="
           docker stack deploy -c docker-compose_canary.yaml ${CANARY_APP_NAME}
-          sleep 40
+          sleep 80
           docker service ls --filter name=${CANARY_APP_NAME}
         '''
       }
