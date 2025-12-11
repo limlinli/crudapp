@@ -87,63 +87,63 @@ pipeline {
     }
 
     stage('Gradual Traffic Shift') {
-      steps {
-        script {
-          // Проверяем, существует ли основной сервис
-          if (sh(script: "docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server", returnStatus: true) == 0) {
-            echo "=== Постепенное обновление продакшена ==="
+  steps {
+    script {
+      def serviceExists = sh(script: "docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server", returnStatus: true) == 0
 
-            // Шаг 1: Обновляем 1 из 3 реплик продакшена (33% трафика)
-            echo "Шаг 1: Обновляем 1 реплику продакшена на v${BUILD_NUMBER}"
-            sh """
-              docker service update \
-                --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${VERSION_TAG} \
-                --update-parallelism 1 \
-                --update-delay 30s \
-                ${APP_NAME}_web-server
-            """
+      if (serviceExists) {
+        echo "=== Постепенное обновление продакшена ==="
 
-            // Ждем стабилизации
-            sleep 60
+        // Шаг 1: Обновляем первую реплику
+        echo "Шаг 1: Обновляем 1 реплику (33%)"
+        sh """
+          docker service update \
+            --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
+            --update-parallelism 1 \
+            --update-delay 30s \
+            --update-order start-first \
+            ${APP_NAME}_web-server
+        """
+        sleep 90
+        sh "docker service ps ${APP_NAME}_web-server | head -20"
 
-            // Мониторим метрики
-            echo "Мониторинг после 33% обновления..."
-            // Можно добавить реальный мониторинг, пока заглушка
-            sh "docker service ps ${APP_NAME}_web-server | head -20"
+        // Шаг 2: Обновляем вторую реплику
+        echo "Шаг 2: Обновляем 2 реплику (66%)"
+        sh """
+          docker service update \
+            --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
+            --update-parallelism 1 \
+            --update-delay 30s \
+            --update-order start-first \
+            ${APP_NAME}_web-server
+        """
+        sleep 90
+        sh "docker service ps ${APP_NAME}_web-server | head -20"
 
-            // Шаг 2: Обновляем еще 1 реплику (всего 66%)
-            echo "Шаг 2: Обновляем еще 1 реплику (всего 66% трафика)"
-            sh """
-              docker service update \
-                --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${VERSION_TAG} \
-                ${APP_NAME}_web-server
-            """
+        // Шаг 3: Обновляем последнюю реплику
+        echo "Шаг 3: Обновляем 3 реплику (100%)"
+        sh """
+          docker service update \
+            --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
+            --update-parallelism 1 \
+            --update-delay 30s \
+            --update-order start-first \
+            ${APP_NAME}_web-server
+        """
+        sleep 90
+        sh "docker service ps ${APP_NAME}_web-server | head -20"
 
-            sleep 60
+        // Удаляем canary
+        echo "Удаление canary stack..."
+        sh "docker stack rm ${CANARY_APP_NAME} || true"
 
-            // Шаг 3: Обновляем последнюю реплику (100%)
-            echo "Шаг 3: Завершаем обновление (100% трафика)"
-            sh """
-              docker service update \
-                --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${VERSION_TAG} \
-                ${APP_NAME}_web-server
-            """
-
-            // Проверяем, что все реплики обновлены
-            sh "docker service ps ${APP_NAME}_web-server | head -20"
-
-            // Удаляем canary stack (он больше не нужен)
-            echo "Удаление canary stack..."
-            sh "docker stack rm ${CANARY_APP_NAME}"
-            
-          } else {
-            echo "=== Первый деплой приложения ==="
-            sh "docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth"
-            echo "Продакшен успешно развернут с нуля"
-          }
-        }
+      } else {
+        echo "=== Первый деплой ==="
+        sh "docker stack deploy -c docker-compose.yaml ${APP_NAME}"
       }
     }
+  }
+}
 
         stage('Final Verification') {
       steps {
