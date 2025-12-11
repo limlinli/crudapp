@@ -100,7 +100,7 @@ pipeline {
           docker service update \
             --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
             --update-parallelism 1 \
-            --update-delay 30s \
+            --update-delay 90s \
             --update-order start-first \
             --detach=false \
             ${APP_NAME}_web-server
@@ -114,7 +114,7 @@ pipeline {
           docker service update \
             --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
             --update-parallelism 1 \
-            --update-delay 30s \
+            --update-delay 90s \
             --update-order start-first \
             --detach=false \
             ${APP_NAME}_web-server
@@ -128,7 +128,7 @@ pipeline {
           docker service update \
             --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
             --update-parallelism 1 \
-            --update-delay 30s \
+            --update-delay 90s \
             --update-order start-first \
             --detach=false \
             ${APP_NAME}_web-server
