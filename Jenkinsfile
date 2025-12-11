@@ -3,11 +3,11 @@ pipeline {
   environment {
     APP_NAME = 'app'
     CANARY_APP_NAME = 'app-canary'
-    DOCKER_HUB_USER = 'your-dockerhub-username'
-    GIT_REPO = 'https://github.com/your-username/your-repo.git'
-    CANARY_PERCENTAGE = '25' 
-    BACKEND_IMAGE_NAME = 'your-backend-image'
-    DATABASE_IMAGE_NAME = 'your-database-image'
+    DOCKER_HUB_USER = 'popstar13'
+    GIT_REPO = 'https://github.com/limlinli/crudapp.git'
+    BACKEND_IMAGE_NAME = 'crudback'
+    DATABASE_IMAGE_NAME = 'mysql'
+    MANAGER_IP = '192.168.0.1'  
   }
 
   stages {
@@ -19,10 +19,8 @@ pipeline {
 
     stage('Build Docker Images') {
       steps {
-        sh 'docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}'
-        sh 'docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:${BUILD_NUMBER}'
-        sh 'docker tag ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:latest'
-        sh 'docker tag ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:${BUILD_NUMBER} ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:latest'
+        sh "docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}"
+        sh "docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:${BUILD_NUMBER}"
       }
     }
 
@@ -30,11 +28,9 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
           sh '''
-            docker login -u $DOCKER_USER -p $DOCKER_PASS
+            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
             docker push ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}
             docker push ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:${BUILD_NUMBER}
-            docker push ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:latest
-            docker push ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:latest
           '''
         }
       }
@@ -43,15 +39,9 @@ pipeline {
     stage('Deploy Canary') {
       steps {
         sh '''
-          echo "=== Развертывание Canary (${CANARY_PERCENTAGE}% трафика) ==="
-          
-          # Создаем canary stack с ограниченным количеством реплик
+          echo "=== Развёртывание Canary (1 реплика) ==="
           docker stack deploy -c docker-compose_canary.yaml ${CANARY_APP_NAME} --with-registry-auth
-          
-          echo "Ожидание запуска canary-сервисов..."
           sleep 40
-          
-          # Проверяем статус canary-сервисов
           docker service ls --filter name=${CANARY_APP_NAME}
         '''
       }
@@ -60,110 +50,98 @@ pipeline {
     stage('Canary Testing') {
       steps {
         sh '''
-          echo "=== Тестирование Canary-версии ==="
-
-          CANARY_SUCCESS=0
-          CANARY_TESTS=10
-
-          for i in $(seq 1 $CANARY_TESTS); do
-            echo "Тест $i/$CANARY_TESTS..."
-
-            # Попробуем главную страницу
-            if curl -f -s --max-time 15 http://192.168.0.1:8081/ > /tmp/canary_response_$i.html; then
-              if ! grep -iq "error\\|fatal\\|exception\\|failed\\|warning" /tmp/canary_response_$i.html; then
-                CANARY_SUCCESS=$((CANARY_SUCCESS + 1))
-                echo "Успешно Тест $i пройден — приложение отвечает"
+          echo "=== Тестирование Canary-версии (порт 8081) ==="
+          SUCCESS=0
+          TESTS=10
+          for i in $(seq 1 $TESTS); do
+            echo "Тест $i/$TESTS..."
+            if curl -f -s --max-time 15 http://${MANAGER_IP}:8081/ > /tmp/canary_$i.html; then
+              if ! grep -iq "error\\|fatal\\|exception\\|failed" /tmp/canary_$i.html; then
+                SUCCESS=$((SUCCESS + 1))
+                echo "✓ Тест $i пройден"
               else
-                echo "Ошибка Тест $i: в ответе есть слово error/fatal"
-                cat /tmp/canary_response_$i.html | head -20
+                echo "✗ Тест $i: найдены ошибки в ответе"
               fi
             else
-              echo "Ошибка Тест $i: нет ответа 200"
+              echo "✗ Тест $i: нет ответа"
             fi
-
             sleep 6
           done
-
-          echo "Результаты: $CANARY_SUCCESS из $CANARY_TESTS успешных"
-
-          if [ "$CANARY_SUCCESS" -lt 8 ]; then
-            echo "Ошибка Canary-тестирование провалено ($CANARY_SUCCESS/10)"
-            exit 1  # Это прервет пайплайн
-          else
-            echo "Успешно Canary-тестирование пройдено!"
-          fi
+          echo "Успешных тестов: $SUCCESS/$TESTS"
+          [ "$SUCCESS" -ge 8 ] || exit 1
+          echo "Canary прошёл тестирование!"
         '''
       }
     }
 
     stage('Gradual Traffic Shift') {
-      steps {
-        sh '''
-          echo "=== Постепенное переключение трафика ==="
-          
-          # Проверяем, существует ли основной сервис
-          if docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server; then
-            echo "Основной сервис существует, выполняем постепенное переключение..."
-            
-            # Этап 1: 50% трафика на новую версию
-            echo "Этап 1: 50% трафика на новую версию"
-            docker service update --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} ${APP_NAME}_web-server --replicas 2
-            docker service update --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:latest ${CANARY_APP_NAME}_web-server --replicas 2
-            sleep 120
-            
-            # Мониторинг метрик
-            echo "Мониторинг метрик после 50% переключения..."
-            sleep 30
-            
-            # Этап 2: 100% трафика на новую версию
-            echo "Этап 2: 100% трафика на новую версию"
-            docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
-            docker service scale ${APP_NAME}_web-server=3
-            sleep 50
-            
-            # Удаляем canary stack
-            echo "Удаление canary stack..."
-            docker stack rm ${CANARY_APP_NAME}
-            sleep 15
-            
-          else
-            echo "Основной сервис не существует, развертываем продакшен вместо canary..."
-            
-            # Развертываем продакшен
-            docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
-            sleep 60
+  steps {
+    script {
+      // Проверяем, существует ли основной сервис
+      def serviceExists = sh(script: "docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server", returnStatus: true) == 0
 
-            # Удаляем canary и развертываем полноценный продакшен
-            docker stack rm ${CANARY_APP_NAME} || true
-            sleep 30
-            
-            echo "Продакшен успешно развернут с нуля"
-          fi
-        '''
+      if (serviceExists) {
+        echo "=== Постепенное обновление продакшена ==="
+
+        // Шаг 1: Обновляем первую реплику (33% трафика на новую версию)
+        echo "Шаг 1: Обновляем 1 реплику продакшена на v${BUILD_NUMBER}"
+        sh """
+          docker service update \
+            --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
+            --update-parallelism 1 \
+            --update-delay 30s \
+            --update-order start-first \
+            ${APP_NAME}_web-server
+        """
+
+        echo "Ожидание стабилизации после первой реплики..."
+        sleep 90
+
+        // Шаг 2: Запускаем обновление остальных реплик (Swarm продолжит сам)
+        echo "Шаг 2: Обновляем оставшиеся реплики"
+        sh """
+          docker service update \
+            --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
+            --update-parallelism 1 \
+            --update-delay 30s \
+            ${APP_NAME}_web-server
+        """
+
+        echo "Ожидание завершения полного обновления..."
+        sleep 120
+
+        // Проверяем статус
+        sh "docker service ps ${APP_NAME}_web-server | head -20"
+
+        // Удаляем canary
+        echo "Удаление canary stack..."
+        sh "docker stack rm ${CANARY_APP_NAME} || true"
+        sleep 20
+
+      } else {
+        echo "=== Первый деплой приложения ==="
+        sh "docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth"
+        sleep 60
+        echo "Продакшен успешно развернут с нуля"
       }
     }
-
+  }
+}
     stage('Final Verification') {
       steps {
         sh '''
-          echo "=== Финальная проверка ==="
-          
-          # Проверяем, что все сервисы работают
-          docker service ls --filter name=${APP_NAME}
-          
-          # Финальное тестирование
+          echo "=== Финальная проверка продакшена (порт 8080) ==="
           for i in $(seq 1 5); do
             echo "Финальный тест $i/5..."
-            if curl -f --max-time 10 http://192.168.0.1:8080/ > /dev/null 2>&1; then
-              echo "✓ Финальный тест $i пройден"
+            if curl -f --max-time 10 http://${MANAGER_IP}:8080/ > /dev/null 2>&1; then
+              echo "✓ Тест $i пройден"
             else
-              echo "✗ Финальный тест $i не пройден"
+              echo "✗ Тест $i не пройден"
               exit 1
             fi
             sleep 5
           done
-          
-          echo "✓ Все проверки пройдены успешно"
+          echo "Все финальные тесты пройдены!"
         '''
       }
     }
@@ -171,26 +149,19 @@ pipeline {
 
   post {
     success {
-      echo "✓ Canary-деплой успешно завершен"
+      echo "✓ Canary-деплой успешно завершён!"
       sh 'docker logout'
-      sh '''
-        # Очистка старых образов
-        docker image prune -f
-      '''
     }
-    
     failure {
-      echo "✗ Canary-тестирование провалено - откат не требуется, так как изменения не были применены"
+      echo "✗ Ошибка в пайплайне — canary удалён, продакшен остался прежним"
       sh '''
-        echo "Останавливаем canary-сервисы..."
         docker stack rm ${CANARY_APP_NAME} || true
-        
-        echo "Проверяем, что prod-сервисы работают без изменений..."
-        docker service ls --filter name=${APP_NAME}
-        
-        echo "Canary удален, продакшен остался без изменений"
+        echo "Canary удалён, продакшен не тронут"
       '''
       sh 'docker logout'
+    }
+    always {
+      sh 'docker image prune -f || true'
     }
   }
 }
