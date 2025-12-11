@@ -99,7 +99,7 @@ pipeline {
         sh """
           docker service update \
             --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
-            --update-parallelism 1 \
+            --replicas 1 \
             --update-delay 90s \
             --update-order start-first \
             --detach=false \
@@ -113,7 +113,7 @@ pipeline {
         sh """
           docker service update \
             --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
-            --update-parallelism 1 \
+            --replicas 1 \
             --update-delay 90s \
             --update-order start-first \
             --detach=false \
@@ -127,7 +127,7 @@ pipeline {
         sh """
           docker service update \
             --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
-            --update-parallelism 1 \
+            --replicas 1 \
             --update-delay 90s \
             --update-order start-first \
             --detach=false \
