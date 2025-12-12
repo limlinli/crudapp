@@ -87,86 +87,55 @@ pipeline {
     }
 
     stage('Gradual Traffic Shift') {
-  steps {
-    script {
-      if (sh(script: "docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server", returnStatus: true) == 0) {
-        echo "=== Постепенное обновление продакшена ==="
-        
-        // Получаем текущее количество реплик
-        def replicaCount = sh(script: """
-          docker service inspect ${APP_NAME}_web-server --format '{{.Spec.Mode.Replicated.Replicas}}'
-        """, returnStdout: true).trim().toInteger()
-        
-        echo "Текущее количество реплик: ${replicaCount}"
-        
-        // Шаг 1: Обновляем только 1 реплику (используем parallelism=1)
-        echo "Шаг 1: Обновляем 1 реплику (33%)"
-        sh """
-          docker service update \
-            --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
-            --update-parallelism 1 \
-            --update-monitor 30s \
-            --update-order start-first \
-            --update-max-failure-ratio 0 \
-            --detach=false \
-            ${APP_NAME}_web-server
-        """
-        
-        // Ждем, пока обновится только 1 реплика
-        sleep 60
-        
-        echo "Состояние после шага 1:"
-        sh """
-          docker service ps ${APP_NAME}_web-server --format "table {{.Name}}\t{{.Image}}\t{{.CurrentState}}" | head -15
-          echo "=== Обновлено реплик: 1 из ${replicaCount} ==="
-        """
-        
-        // Шаг 2: Увеличиваем parallelism для обновления второй реплики
-        echo "Шаг 2: Обновляем 2 реплику (66%)"
-        sh """
-          docker service update \
-            --update-parallelism 2 \
-            --detach=false \
-            ${APP_NAME}_web-server
-        """
-        
-        sleep 60
-        
-        echo "Состояние после шага 2:"
-        sh """
-          docker service ps ${APP_NAME}_web-server --format "table {{.Name}}\t{{.Image}}\t{{.CurrentState}}" | head -15
-          echo "=== Обновлено реплик: 2 из ${replicaCount} ==="
-        """
-        
-        // Шаг 3: Увеличиваем parallelism для обновления всех реплик
-        echo "Шаг 3: Обновляем 3 реплику (100%)"
-        sh """
-          docker service update \
-            --update-parallelism ${replicaCount} \
-            --detach=false \
-            ${APP_NAME}_web-server
-        """
-        
-        sleep 60
-        
-        echo "Финальное состояние:"
-        sh """
-          docker service ps ${APP_NAME}_web-server --format "table {{.Name}}\t{{.Image}}\t{{.CurrentState}}" | head -15
-          echo "=== Все реплики обновлены ==="
-        """
+      steps {
+        sh '''
+          echo "=== Постепенное обновление продакшена ==="
 
-        // Удаляем canary
-        echo "Удаление canary stack..."
-        sh "docker stack rm ${CANARY_APP_NAME} || true"
+          if docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server; then
+            echo "Продакшен существует — начинаем Canary-обновление"
 
-      } else {
-        echo "=== Первый деплой ==="
-        sh "docker stack deploy -c docker-compose.yaml ${APP_NAME}"
+            # Шаг 1: Обновляем только первую реплику с большой задержкой
+            echo "Шаг 1: Обновляем первую реплику (33% трафика)"
+            docker service update \
+              --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${VERSION_TAG} \
+              --update-parallelism 1 \
+              --update-delay 40s \
+              --update-order start-first \
+              ${APP_NAME}_web-server
+
+            echo "Статус после обновления:"
+            docker service ps ${APP_NAME}_web-server --no-trunc | head -20
+
+            # Дополнительная проверка после первой реплики (опционально)
+            echo "Проверка после обновления первой реплики..."
+            curl -f http://${MANAGER_IP}:8080/ > /dev/null || echo "Внимание: возможны проблемы после первой реплики"
+
+            # Шаг 2: Ускоряем обновление оставшихся реплик
+            echo "Шаг 2: Ускоряем обновление оставшихся реплик"
+            docker service update \
+              --update-delay 10s \
+              --update-parallelism 1 \
+              ${APP_NAME}_web-server
+
+            echo "Ожидание завершения полного обновления..."
+            sleep 120
+
+            echo "Обновление завершено"
+            docker service ps ${APP_NAME}_web-server --no-trunc | head -20
+
+            # Удаляем canary
+            echo "Удаление canary stack..."
+            docker stack rm ${CANARY_APP_NAME} || true
+            sleep 20
+
+          else
+            echo "Первый деплой — разворачиваем продакшен"
+            docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
+            sleep 60
+          fi
+        '''
       }
     }
-  }
-}
-
         stage('Final Verification') {
       steps {
         sh '''
