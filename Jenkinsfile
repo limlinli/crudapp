@@ -41,7 +41,7 @@ pipeline {
         sh '''
           echo "=== Развёртывание Canary (1 реплика) ==="
           docker stack deploy -c docker-compose_canary.yaml ${CANARY_APP_NAME} --with-registry-auth
-          sleep 60
+          sleep 90
           docker service ls --filter name=${CANARY_APP_NAME}
         '''
       }
