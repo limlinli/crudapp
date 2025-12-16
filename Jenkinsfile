@@ -46,9 +46,9 @@ pipeline {
       docker service create \
   --name app_web-server-canary \
   --replicas 1 \
-  --network app_default,alias=web-server \
-  --publish mode=host,target=80_CLASS,published=8080 \
-  ${DOCKER_HUB_USER}/crudback:${BUILD_NUMBER}
+  --network app_default \
+  --publish published=8080,target=80,mode=ingress \
+  popstar13/crudback:${BUILD_NUMBER}
 
       echo "Canary запущен — теперь часть трафика идёт на новую версию"
       sleep 40
