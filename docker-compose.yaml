@@ -39,10 +39,10 @@ services:
     networks:
       - app_network  # <-- Подключаем к сети
 
-  networks:
-app_network:      # <-- Определяем сеть
-  driver: overlay
-  attachable: true  # <-- КЛЮЧЕВОЕ! Позволяет подключать внешние сервисы (canary)
+networks:
+  app_network:      # <-- Определяем сеть
+    driver: overlay
+    attachable: true  # <-- КЛЮЧЕВОЕ! Позволяет подключать внешние сервисы (canary)
     
 volumes:
   mysql-data:
