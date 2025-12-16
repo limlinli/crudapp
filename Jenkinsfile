@@ -37,67 +37,95 @@ pipeline {
     }
 
     stage('Deploy Canary') {
-  steps {
-    sh '''
-      echo "=== Развёртывание Canary в существующей сети app_default ==="
-
-      # Подключаем canary к существующей сети стека app
-      # Используем тот же network alias "web-server", чтобы получать трафик
-      docker service create \
-  --name app_web-server-canary \
-  --replicas 1 \
-  --network app_default \
-  --publish published=8080,target=80,mode=ingress \
-  popstar13/crudback:${BUILD_NUMBER}
-
-      echo "Canary запущен — теперь часть трафика идёт на новую версию"
-      sleep 40
-      docker service ls
-      docker service ps ${APP_NAME}_web-server-canary
-    '''
-  }
-}
-
- 
-
-   
-
-    stage('Gradual Traffic Shift') {
       steps {
         sh '''
-          echo "=== Постепенное обновление продакшена по одной реплике ==="
-
-          if docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server; then
-            echo "Продакшен существует — начинаем rolling update"
-
-            # Обновляем по одной реплике с паузами
-            docker service update \
-              --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
-              --update-parallelism 1 \
-              --update-delay 40s \
-              --update-order start-first \
-              ${APP_NAME}_web-server
-
-            echo "Ожидание завершения обновления всех реплик..."
-            sleep 180
-
-            echo "Статус после обновления:"
-            docker service ps ${APP_NAME}_web-server --no-trunc | head -20
-
-            # Удаляем canary
-            echo "Удаление canary stack..."
-            docker stack rm ${CANARY_APP_NAME} || true
-            sleep 20
-          else
-            echo "Первый деплой — разворачиваем продакшен"
-            docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
-            sleep 60
-          fi
-
-          echo "Постепенное обновление завершено"
+          echo "=== Развёртывание Canary (1 реплика) ==="
+          docker stack deploy -c docker-compose_canary.yaml ${CANARY_APP_NAME} --with-registry-auth
+          sleep 40
+          docker service ls --filter name=${CANARY_APP_NAME}
         '''
       }
     }
+
+    stage('Canary Testing') {
+      steps {
+        sh '''
+          echo "=== Тестирование Canary-версии (порт 8081) ==="
+          SUCCESS=0
+          TESTS=10
+          for i in $(seq 1 $TESTS); do
+            echo "Тест $i/$TESTS..."
+            if curl -f -s --max-time 15 http://${MANAGER_IP}:8081/ > /tmp/canary_$i.html; then
+              if ! grep -iq "error\\|fatal\\|exception\\|failed" /tmp/canary_$i.html; then
+                SUCCESS=$((SUCCESS + 1))
+                echo "✓ Тест $i пройден"
+              else
+                echo "✗ Тест $i: найдены ошибки в ответе"
+              fi
+            else
+              echo "✗ Тест $i: нет ответа"
+            fi
+            sleep 6
+          done
+          echo "Успешных тестов: $SUCCESS/$TESTS"
+          [ "$SUCCESS" -ge 8 ] || exit 1
+          echo "Canary прошёл тестирование!"
+        '''
+      }
+    }
+
+    stage('Gradual Traffic Shift') {
+  steps {
+    sh '''
+      echo "=== Постепенное переключение трафика на новую версию ==="
+
+      # Проверяем, существует ли основной сервис
+      if docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server; then
+        echo "Основной сервис существует — начинаем rolling update по одной реплике"
+
+        # Шаг 1: Обновляем первую реплику продакшена (33% трафика на v${BUILD_NUMBER})
+        echo "Шаг 1: Обновляем 1-ю реплику продакшена"
+        docker service update \
+          --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
+          --update-parallelism 1 \
+          --update-delay 20h \
+          --update-order start-first \
+          ${APP_NAME}_web-server
+
+        echo "Ожидание стабилизации после первой реплики..."
+        sleep 40
+        docker service ps ${APP_NAME}_web-server --no-trunc | head -20
+
+        # Шаг 2: Запускаем обновление остальных (Swarm продолжит сам, но мы можем форсировать)
+        echo "Шаг 2: Обновляем оставшиеся реплики"
+        docker service update \
+          --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
+          --update-parallelism 1 \
+          --update-delay 30s \
+          ${APP_NAME}_web-server
+
+        echo "Ожидание завершения полного обновления..."
+        sleep 120
+
+        # Проверяем, что все реплики обновлены
+        echo "Статус после обновления:"
+        docker service ps ${APP_NAME}_web-server | head -20
+
+        # Удаляем canary — он больше не нужен
+        echo "Удаление canary stack..."
+        docker stack rm ${CANARY_APP_NAME} || true
+        sleep 20
+
+      else
+        echo "Основной сервис не найден — это первый деплой"
+        docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
+        sleep 60
+      fi
+
+      echo "Постепенное переключение завершено"
+    '''
+  }
+}
 
     stage('Final Verification') {
       steps {
