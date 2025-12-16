@@ -2,13 +2,14 @@ pipeline {
   agent { label 'docker-agent' }
   environment {
     APP_NAME = 'app'
-    CANARY_SERVICE_NAME = 'app_canary_php'
+    CANARY_STACK_NAME = 'app-canary-stack'
+    CANARY_SERVICE_NAME = 'app-canary-php'
     DOCKER_HUB_USER = 'popstar13'
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
     BACKEND_IMAGE_NAME = 'crudback'
     DATABASE_IMAGE_NAME = 'mysql'
     MANAGER_IP = '192.168.0.1'
-    PROD_NETWORK = 'app_default'  // Имя сети из стека app
+    NEW_IMAGE = "${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}"
   }
 
   stages {
@@ -20,7 +21,7 @@ pipeline {
 
     stage('Build Docker Images') {
       steps {
-        sh "docker build -f php.Dockerfile . -t ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}"
+        sh "docker build -f php.Dockerfile . -t ${NEW_IMAGE}"
         sh "docker build -f mysql.Dockerfile . -t ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:${BUILD_NUMBER}"
       }
     }
@@ -30,64 +31,105 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
           sh '''
             echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-            docker push ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}
+            docker push ${NEW_IMAGE}
             docker push ${DOCKER_HUB_USER}/${DATABASE_IMAGE_NAME}:${BUILD_NUMBER}
           '''
         }
       }
     }
 
-       stage('Deploy Canary') {
+    stage('Deploy Canary Stack (отдельный порт)') {
       steps {
         sh '''
-          echo "=== Создание временного Canary-сервиса ==="
-          # Создаем сервис БЕЗ публикации порта наружу (тестируем внутри сети)
-          docker service create \
-            --name ${CANARY_SERVICE_NAME} \
-            --replicas 1 \
-            --network ${PROD_NETWORK} \
-            ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}
-          
-          # Ждем стабилизации контейнера
-          sleep 20
+          echo "=== Развёртывание Canary как отдельного стека (порт 8081) ==="
+          docker stack deploy -c docker-compose_canary.yaml ${CANARY_STACK_NAME} --with-registry-auth
+          sleep 40
+          docker service ls --filter name=${CANARY_STACK_NAME}
         '''
       }
     }
 
-    stage('Canary Testing') {
+    stage('Canary Testing (явный, порт 8081)') {
       steps {
-        script {
-          // Выполняем проверку внутри сети Swarm с помощью временного контейнера curl
-          def testResult = sh(
-            script: "docker run --rm --network ${PROD_NETWORK} curlimages/curl:latest curl -s -o /dev/null -w '%{http_code}' http://${CANARY_SERVICE_NAME}:80/health",
-            returnStatus: true
-          )
-
-          // Если статус не 0 (команда упала) или нам нужен конкретный HTTP код
-          // В данном примере проверим просто доступность (exit code 0)
-          if (testResult != 0) {
-            error "Canary Test Failed: Сервис недоступен внутри сети!"
-          } else {
-            echo "Canary Test Passed: Новый образ работает корректно."
-          }
-        }
+        sh '''
+          echo "=== Тестирование Canary на отдельном порту 8081 ==="
+          SUCCESS=0
+          TESTS=10
+          for i in $(seq 1 $TESTS); do
+            if curl -f -s --max-time 15 http://${MANAGER_IP}:8081/ > /dev/null; then
+              SUCCESS=$((SUCCESS + 1))
+              echo "✓ Тест $i пройден (явный canary)"
+            else
+              echo "✗ Тест $i не пройден"
+            fi
+            sleep 6
+          done
+          echo "Явный canary: $SUCCESS/$TESTS успешных"
+          [ "$SUCCESS" -ge 8 ] || exit 1
+        '''
       }
     }
 
-    stage('Rollout Production') {
+    stage('Deploy Canary Service (тот же порт 8080)') {
       steps {
         sh '''
-          echo "=== Тесты пройдены. Обновляем основной сервис ==="
-          
+          echo "=== Запуск Canary как отдельного сервиса (трафик ~25% на 8080) ==="
+          docker service create \
+            --name ${CANARY_SERVICE_NAME} \
+            --replicas 1 \
+            --publish mode=ingress,target=80,published=8080 \
+            --detach=true \
+            ${NEW_IMAGE}
+
+          sleep 40
+          echo "Все сервисы:"
+          docker service ls
+          echo "Все задачи:"
+          docker service ps ${APP_NAME}_web-server
+          docker service ps ${CANARY_SERVICE_NAME}
+        '''
+      }
+    }
+
+    stage('Canary Testing (смешанный трафик на 8080)') {
+      steps {
+        sh '''
+          echo "=== Тестирование смешанного трафика (25% на canary) ==="
+          SUCCESS=0
+          TESTS=20
+          for i in $(seq 1 $TESTS); do
+            if curl -f -s --max-time 15 http://${MANAGER_IP}:8080/ > /dev/null; then
+              SUCCESS=$((SUCCESS + 1))
+              echo "✓ Запрос $i прошёл (часть на canary)"
+            else
+              echo "✗ Запрос $i не прошёл"
+            fi
+            sleep 3
+          done
+          echo "Смешанный трафик: $SUCCESS/$TESTS успешных"
+          [ "$SUCCESS" -ge 18 ] || exit 1
+          echo "Canary в смешанном трафике прошёл!"
+        '''
+      }
+    }
+
+    stage('Gradual Traffic Shift') {
+      steps {
+        sh '''
+          echo "=== Постепенное обновление продакшена по одной реплике ==="
           docker service update \
-            --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
+            --image ${NEW_IMAGE} \
             --update-parallelism 1 \
-            --update-delay 10s \
+            --update-delay 40s \
             --update-order start-first \
             ${APP_NAME}_web-server
 
-          echo "Удаление временного canary-сервиса..."
-          docker service rm ${CANARY_SERVICE_NAME}
+          sleep 180
+
+          echo "Удаление canary-сервиса..."
+          docker service rm ${CANARY_SERVICE_NAME} || true
+          echo "Удаление canary-стека..."
+          docker stack rm ${CANARY_STACK_NAME} || true
         '''
       }
     }
@@ -97,9 +139,10 @@ pipeline {
         sh '''
           echo "=== Финальная проверка ==="
           for i in $(seq 1 5); do
-            curl -f --max-time 10 http://${MANAGER_IP}:8080/ > /dev/null && echo "Тест $i пройден" || exit 1
+            curl -f --max-time 10 http://${MANAGER_IP}:8080/ > /dev/null && echo "✓ Тест $i пройден" || exit 1
             sleep 5
           done
+          docker service ls
         '''
       }
     }
@@ -111,6 +154,7 @@ pipeline {
     }
     failure {
       sh "docker service rm ${CANARY_SERVICE_NAME} || true"
+      sh "docker stack rm ${CANARY_STACK_NAME} || true"
     }
   }
 }
