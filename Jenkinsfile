@@ -78,7 +78,7 @@ pipeline {
           docker service create \
             --name ${CANARY_SERVICE_NAME} \
             --replicas 1 \
-            --network name=app_app_network,alias=web-server \
+            --network name=app_network,alias=web-server \
             ${NEW_IMAGE}
 
           sleep 40
