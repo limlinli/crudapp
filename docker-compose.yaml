@@ -10,8 +10,7 @@ services:
       - phpmyadmin
     deploy:
       replicas: 3
-    app_network:   # <-- Добавляем сеть
-    и
+ 
       
   db:
     image: popstar13/mysql
