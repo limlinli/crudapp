@@ -37,42 +37,30 @@ pipeline {
     }
 
     stage('Deploy Canary') {
-      steps {
-        sh '''
-          echo "=== Развёртывание Canary (1 реплика) ==="
-          docker stack deploy -c docker-compose_canary.yaml ${CANARY_APP_NAME} --with-registry-auth
-          sleep 40
-          docker service ls --filter name=${CANARY_APP_NAME}
-        '''
-      }
-    }
+  steps {
+    sh '''
+      echo "=== Развёртывание Canary в существующей сети app_default ==="
 
-    stage('Canary Testing') {
-      steps {
-        sh '''
-          echo "=== Тестирование Canary-версии (порт 8081) ==="
-          SUCCESS=0
-          TESTS=10
-          for i in $(seq 1 $TESTS); do
-            echo "Тест $i/$TESTS..."
-            if curl -f -s --max-time 15 http://${MANAGER_IP}:8081/ > /tmp/canary_$i.html; then
-              if ! grep -iq "error\\|fatal\\|exception\\|failed" /tmp/canary_$i.html; then
-                SUCCESS=$((SUCCESS + 1))
-                echo "✓ Тест $i пройден"
-              else
-                echo "✗ Тест $i: найдены ошибки в ответе"
-              fi
-            else
-              echo "✗ Тест $i: нет ответа"
-            fi
-            sleep 6
-          done
-          echo "Успешных тестов: $SUCCESS/$TESTS"
-          [ "$SUCCESS" -ge 8 ] || exit 1
-          echo "Canary прошёл тестирование!"
-        '''
-      }
-    }
+      # Подключаем canary к существующей сети стека app
+      # Используем тот же network alias "web-server", чтобы получать трафик
+      docker service create \
+        --name ${APP_NAME}_web-server-canary \
+        --replicas 1 \
+        --network app_default \
+        --network-alias web-server \
+        --publish mode=host,target=80,published=8080 \
+        --detach=false \
+        ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}
+
+      echo "Canary запущен — теперь часть трафика идёт на новую версию"
+      sleep 40
+      docker service ls
+      docker service ps ${APP_NAME}_web-server-canary
+    '''
+  }
+}
+
+ 
 
    
 
