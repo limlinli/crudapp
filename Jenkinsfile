@@ -74,29 +74,7 @@ pipeline {
       }
     }
 
-    stage('Deploy Canary') {
-  steps {
-    sh '''
-      echo "=== Развёртывание Canary в существующей сети app_default ==="
-
-      # Подключаем canary к существующей сети стека app
-      # Используем тот же network alias "web-server", чтобы получать трафик
-      docker service create \
-        --name ${APP_NAME}_web-server-canary \
-        --replicas 1 \
-        --network app_default \
-        --network-alias web-server \
-        --publish mode=host,target=80,published=8080 \
-        --detach=false \
-        ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}
-
-      echo "Canary запущен — теперь часть трафика идёт на новую версию"
-      sleep 40
-      docker service ls
-      docker service ps ${APP_NAME}_web-server-canary
-    '''
-  }
-}
+   
 
     stage('Gradual Traffic Shift') {
       steps {
