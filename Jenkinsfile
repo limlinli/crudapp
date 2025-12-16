@@ -89,7 +89,7 @@ pipeline {
           --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
           --update-parallelism 1 \
           --update-delay 20h \
-          --update-order start-first \
+          --detach=true \
           ${APP_NAME}_web-server
 
         echo "Ожидание стабилизации после первой реплики..."
