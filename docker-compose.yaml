@@ -33,11 +33,6 @@ services:
       PMA_PASSWORD: 'secret'
     ports:
       - "5000:80"
-
-networks:
-  app_default:      # <-- Определяем сеть
-    driver: overlay
-    attachable: true  # <-- КЛЮЧЕВОЕ! Позволяет подключать внешние сервисы (canary)
     
 volumes:
   mysql-data:
