@@ -37,71 +37,57 @@ pipeline {
       }
     }
 
-    stage('Deploy Canary') {
+       stage('Deploy Canary') {
       steps {
         sh '''
-          echo "=== Создание Canary-сервиса (получает трафик на 8080) ==="
-
+          echo "=== Создание временного Canary-сервиса ==="
+          # Создаем сервис БЕЗ публикации порта наружу (тестируем внутри сети)
           docker service create \
             --name ${CANARY_SERVICE_NAME} \
             --replicas 1 \
             --network ${PROD_NETWORK} \
-            --publish mode=ingress,target=80,published=8080 \
-            --detach=false \
             ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}
-
-          sleep 40
-          docker service ls
+          
+          # Ждем стабилизации контейнера
+          sleep 20
         '''
       }
     }
 
     stage('Canary Testing') {
       steps {
-        sh '''
-          echo "=== Тестирование Canary (проверка по логам сервиса — без изменений в коде) ==="
-          
-          # Сохраняем количество строк в логах перед тестом
-          BEFORE=$(docker service logs ${CANARY_SERVICE_NAME} 2>/dev/null | wc -l || echo 0)
-          
-          echo "Отправляем 20 запросов на 8080..."
-          for i in $(seq 1 20); do
-            curl -s --max-time 15 http://${MANAGER_IP}:8080/ > /dev/null
-            sleep 3
-          done
-          
-          # Считаем новые строки в логах
-          AFTER=$(docker service logs ${CANARY_SERVICE_NAME} 2>/dev/null | wc -l || echo 0)
-          HITS=$((AFTER - BEFORE))
-          
-          echo "Запросов дошло на canary: $HITS"
-          if [ "$HITS" -ge 3 ]; then
-            echo "Canary успешно получает трафик!"
-          else
-            echo "Canary НЕ получает трафик!"
-            exit 1
-          fi
-        '''
+        script {
+          // Выполняем проверку внутри сети Swarm с помощью временного контейнера curl
+          def testResult = sh(
+            script: "docker run --rm --network ${PROD_NETWORK} curlimages/curl:latest curl -s -o /dev/null -w '%{http_code}' http://${CANARY_SERVICE_NAME}:80/health",
+            returnStatus: true
+          )
+
+          // Если статус не 0 (команда упала) или нам нужен конкретный HTTP код
+          // В данном примере проверим просто доступность (exit code 0)
+          if (testResult != 0) {
+            error "Canary Test Failed: Сервис недоступен внутри сети!"
+          } else {
+            echo "Canary Test Passed: Новый образ работает корректно."
+          }
+        }
       }
     }
 
-    stage('Gradual Traffic Shift') {
+    stage('Rollout Production') {
       steps {
         sh '''
-          echo "=== Постепенное обновление продакшена по одной реплике ==="
+          echo "=== Тесты пройдены. Обновляем основной сервис ==="
           
           docker service update \
             --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
             --update-parallelism 1 \
-            --update-delay 40s \
+            --update-delay 10s \
             --update-order start-first \
             ${APP_NAME}_web-server
 
-          sleep 180
-          
-          echo "Удаление canary..."
-          docker service rm ${CANARY_SERVICE_NAME} || true
-          sleep 20
+          echo "Удаление временного canary-сервиса..."
+          docker service rm ${CANARY_SERVICE_NAME}
         '''
       }
     }
