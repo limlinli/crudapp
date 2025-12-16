@@ -70,22 +70,20 @@ pipeline {
       }
     }
 
-      stage('Deploy Canary Service (тот же порт 8080)') {
+          stage('Deploy Canary Service (тот же порт 8080)') {
       steps {
         sh '''
-          echo "=== Подмешивание Canary к основному балансировщику ==="
-          
-          # Мы НЕ публикуем порт 8080 здесь. 
-          # Мы подключаем сервис к той же сети и даем ему тот же алиас.
+          echo "=== Подмешивание Canary через сетевой алиас ==="
           
           docker service create \
             --name ${CANARY_SERVICE_NAME} \
             --replicas 1 \
-            --network app_app_network \
-            --network-alias web-server \
+            --network name=app_app_network,alias=web-server \
             ${NEW_IMAGE}
 
           sleep 40
+          echo "Проверка доступности Canary внутри сети:"
+          docker service ls --filter name=${CANARY_SERVICE_NAME}
         '''
       }
     }
