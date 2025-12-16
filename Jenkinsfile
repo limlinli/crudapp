@@ -8,7 +8,7 @@ pipeline {
     BACKEND_IMAGE_NAME = 'crudback'
     DATABASE_IMAGE_NAME = 'mysql'
     MANAGER_IP = '192.168.0.1'
-    PROD_NETWORK = 'crudapp_default'  // Имя сети из стека app
+    PROD_NETWORK = 'app_default'  // Имя сети из стека app
   }
 
   stages {
