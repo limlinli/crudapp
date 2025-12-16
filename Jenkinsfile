@@ -46,7 +46,6 @@ pipeline {
             --name ${CANARY_SERVICE_NAME} \
             --replicas 1 \
             --network ${PROD_NETWORK} \
-            --network-alias web-server \
             --publish mode=ingress,target=80,published=8080 \
             --detach=false \
             ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER}
