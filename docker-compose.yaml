@@ -5,6 +5,11 @@ services:
     restart: always
     ports:
       - "8080:80"
+    networks:
+      app_default:
+        aliases:
+          - web-server  # ← Алиас для DNS внутри сети
+    deploy:
     depends_on:
       - db
       - phpmyadmin
