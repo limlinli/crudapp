@@ -11,8 +11,6 @@ services:
       - phpmyadmin
     deploy:
       replicas: 3
- 
-      
   db:
     image: popstar13/mysql
     restart: always
