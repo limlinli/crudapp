@@ -87,7 +87,7 @@ pipeline {
             docker service update \
               --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
               --update-parallelism 1 \
-              --update-delay 20s \
+              --update-delay 20h \
               --detach=true \
               ${APP_NAME}_web-server
 
@@ -98,7 +98,7 @@ pipeline {
             # Мониторинг после первого шага
             echo "=== Мониторинг после первой реплики ==="
             MONITOR_SUCCESS=0
-            MONITOR_TESTS=5
+            MONITOR_TESTS=10
             for j in $(seq 1 $MONITOR_TESTS); do
               if curl -f -s --max-time 15 http://${MANAGER_IP}:8080/ > /tmp/monitor_$j.html; then
                 if ! grep -iq "error\\|fatal" /tmp/monitor_$j.html; then
@@ -108,7 +108,7 @@ pipeline {
               sleep 5
             done
             echo "Успешных проверок после первой реплики: $MONITOR_SUCCESS/$MONITOR_TESTS"
-            [ "$MONITOR_SUCCESS" -ge 4 ] || exit 1
+            [ "$MONITOR_SUCCESS" -ge 9 ] || exit 1
 
             echo "Мониторинг после первой реплики прошёл!"
             sleep 100
