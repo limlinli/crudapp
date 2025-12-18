@@ -5,7 +5,6 @@ services:
     restart: always
     ports:
       - "8080:80"
-    deploy:
     depends_on:
       - db
       - phpmyadmin
