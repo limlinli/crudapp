@@ -7,7 +7,7 @@ pipeline {
     GIT_REPO = 'https://github.com/limlinli/crudapp.git'
     BACKEND_IMAGE_NAME = 'crudback'
     DATABASE_IMAGE_NAME = 'mysql'
-    MANAGER_IP = '192.168.0.1'  // IP твоей leader-ноды
+    MANAGER_IP = '192.168.0.1'
   }
 
   stages {
@@ -75,63 +75,78 @@ pipeline {
     }
 
     stage('Gradual Traffic Shift') {
-  steps {
-    sh '''
-      echo "=== Постепенное переключение трафика на новую версию ==="
+      steps {
+        sh '''
+          echo "=== Постепенное переключение трафика на новую версию ==="
+          # Проверяем, существует ли основной сервис
+          if docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server; then
+            echo "Основной сервис существует — начинаем rolling update по одной реплике"
 
-      # Проверяем, существует ли основной сервис
-      if docker service ls --filter name=${APP_NAME}_web-server | grep -q ${APP_NAME}_web-server; then
-        echo "Основной сервис существует — начинаем rolling update по одной реплике"
+            # Шаг 1: Обновляем первую реплику продакшена (33% трафика на v${BUILD_NUMBER})
+            echo "Шаг 1: Обновляем 1-ю реплику продакшена"
+            docker service update \
+              --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
+              --update-parallelism 1 \
+              --update-delay 20s \
+              --detach=true \
+              ${APP_NAME}_web-server
 
-        # Шаг 1: Обновляем первую реплику продакшена (33% трафика на v${BUILD_NUMBER})
-        echo "Шаг 1: Обновляем 1-ю реплику продакшена"
-        docker service update \
-          --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
-          --update-parallelism 1 \
-          --update-delay 20h \
-          --detach=true \
-          ${APP_NAME}_web-server
+            echo "Ожидание стабилизации после первой реплики..."
+            sleep 40
+            docker service ps ${APP_NAME}_web-server --no-trunc | head -20
 
-        echo "Ожидание стабилизации после первой реплики..."
-        sleep 40
-        docker service ps ${APP_NAME}_web-server --no-trunc | head -20
-        sleep 100
+            # Мониторинг после первого шага
+            echo "=== Мониторинг после первой реплики ==="
+            MONITOR_SUCCESS=0
+            MONITOR_TESTS=5
+            for j in $(seq 1 $MONITOR_TESTS); do
+              if curl -f -s --max-time 15 http://${MANAGER_IP}:8080/ > /tmp/monitor_$j.html; then
+                if ! grep -iq "error\\|fatal" /tmp/monitor_$j.html; then
+                  MONITOR_SUCCESS=$((MONITOR_SUCCESS + 1))
+                fi
+              fi
+              sleep 5
+            done
+            echo "Успешных проверок после первой реплики: $MONITOR_SUCCESS/$MONITOR_TESTS"
+            [ "$MONITOR_SUCCESS" -ge 4 ] || exit 1
 
-        # Шаг 2: Запускаем обновление остальных (Swarm продолжит сам, но мы можем форсировать)
-        echo "Шаг 2: Обновляем оставшиеся реплики"
-        docker service update \
-          --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
-          --update-parallelism 1 \
-          --update-delay 30s \
-          ${APP_NAME}_web-server
+            echo "Мониторинг после первой реплики прошёл!"
+            sleep 100
 
-        echo "Ожидание завершения полного обновления..."
-        sleep 120
+            # Шаг 2: Обновляем оставшиеся реплики
+            echo "Шаг 2: Обновляем оставшиеся реплики"
+            docker service update \
+              --image ${DOCKER_HUB_USER}/${BACKEND_IMAGE_NAME}:${BUILD_NUMBER} \
+              --update-parallelism 1 \
+              --update-delay 30s \
+              ${APP_NAME}_web-server
 
-        # Проверяем, что все реплики обновлены
-        echo "Статус после обновления:"
-        docker service ps ${APP_NAME}_web-server | head -20
+            echo "Ожидание завершения полного обновления..."
+            sleep 120
 
-        # Удаляем canary — он больше не нужен
-        echo "Удаление canary stack..."
-        docker stack rm ${CANARY_APP_NAME} || true
-        sleep 20
+            # Проверяем, что все реплики обновлены
+            echo "Статус после обновления:"
+            docker service ps ${APP_NAME}_web-server | head -20
 
-      else
-        echo "Основной сервис не найден — это первый деплой"
-        docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
-        sleep 60
-      fi
+            # Удаляем canary — он больше не нужен
+            echo "Удаление canary stack..."
+            docker stack rm ${CANARY_APP_NAME} || true
+            sleep 20
+          else
+            echo "Первый деплой — разворачиваем продакшен"
+            docker stack deploy -c docker-compose.yaml ${APP_NAME} --with-registry-auth
+            sleep 60
+          fi
 
-      echo "Постепенное переключение завершено"
-    '''
-  }
-}
+          echo "Постепенное переключение завершено"
+        '''
+      }
+    }
 
     stage('Final Verification') {
       steps {
         sh '''
-          echo "=== Финальная проверка продакшена (порт 8080) ==="
+          echo "=== Финальная проверка ==="
           for i in $(seq 1 5); do
             echo "Финальный тест $i/5..."
             if curl -f --max-time 10 http://${MANAGER_IP}:8080/ > /dev/null 2>&1; then
